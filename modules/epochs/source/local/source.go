@@ -3,9 +3,9 @@ package local
 import (
 	"fmt"
 
-	epochstypes "github.com/ExocoreNetwork/exocore/x/epochs/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/forbole/juno/v5/node/local"
+	epochstypes "github.com/imua-xyz/imuachain/x/epochs/types"
 
 	"github.com/cosmos/cosmos-sdk/types/query"
 

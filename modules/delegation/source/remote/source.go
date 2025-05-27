@@ -3,8 +3,8 @@ package remote
 import (
 	sdkmath "cosmossdk.io/math"
 
-	delegationtypes "github.com/ExocoreNetwork/exocore/x/delegation/types"
 	"github.com/forbole/juno/v5/node/remote"
+	delegationtypes "github.com/imua-xyz/imuachain/x/delegation/types"
 
 	delegationsource "github.com/forbole/callisto/v4/modules/delegation/source"
 )

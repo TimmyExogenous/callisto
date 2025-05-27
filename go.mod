@@ -5,13 +5,14 @@ go 1.21.12
 require (
 	cosmossdk.io/math v1.2.0
 	cosmossdk.io/simapp v0.0.0-20230712090904-031162fbb96e
-	github.com/ExocoreNetwork/exocore v1.0.9
 	github.com/cometbft/cometbft v0.37.4
 	github.com/cosmos/cosmos-sdk v0.47.8
 	github.com/cosmos/gogoproto v1.4.11
+	github.com/ethereum/go-ethereum v1.13.5-0.20231027145059-2d7dba024d76
 	github.com/forbole/juno/v5 v5.2.1-0.20240201075935-851426ddd905
 	github.com/go-co-op/gocron v1.37.0
 	github.com/golangci/golangci-lint v1.55.2
+	github.com/imua-xyz/imuachain v1.1.0
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/lib/pq v1.10.9
 	github.com/pelletier/go-toml v1.9.5
@@ -119,7 +120,6 @@ require (
 	github.com/dvsekhvalnov/jose2go v1.6.0 // indirect
 	github.com/edsrzf/mmap-go v1.1.0 // indirect
 	github.com/esimonov/ifshort v1.0.4 // indirect
-	github.com/ethereum/go-ethereum v1.13.5-0.20231027145059-2d7dba024d76 // indirect
 	github.com/ettle/strcase v0.1.1 // indirect
 	github.com/evmos/evmos/v16 v16.0.0 // indirect
 	github.com/fatih/color v1.15.0 // indirect
@@ -349,7 +349,7 @@ require (
 	go.tmz.dev/musttag v0.7.2 // indirect
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.26.0 // indirect
+	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/crypto v0.21.0 // indirect
 	golang.org/x/exp v0.0.0-20231214170342-aacd6d4b4611 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20231108232855-2478ac86f678 // indirect
@@ -390,8 +390,7 @@ replace (
 	github.com/99designs/keyring => github.com/cosmos/keyring v1.2.0
 	github.com/cosmos/cosmos-sdk => github.com/evmos/cosmos-sdk v0.47.5-evmos.2
 	github.com/ethereum/go-ethereum => github.com/evmos/go-ethereum v1.10.26-evmos-rc2
-	github.com/evmos/evmos/v16 => github.com/ExocoreNetwork/evmos/v16 v16.0.3-0.20240828081344-d5cfcd34a812
+	github.com/evmos/evmos/v16 => github.com/imua-xyz/evmos/v16 v16.0.3-0.20250428082709-46118f23fed5
 	github.com/syndtr/goleveldb => github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 	golang.org/x/exp => golang.org/x/exp v0.0.0-20230515195305-f3d0a9c9a5cc
-	github.com/ExocoreNetwork/exocore => /home/user/go/src/github.com/ExocoreNetwork/exocore
 )

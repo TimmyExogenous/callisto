@@ -1,7 +1,7 @@
 package source
 
 import (
-	assetstypes "github.com/ExocoreNetwork/exocore/x/assets/types"
+	assetstypes "github.com/imua-xyz/imuachain/x/assets/types"
 )
 
 type Source interface {

@@ -3,10 +3,10 @@ package operator
 import (
 	"fmt"
 
-	operatortypes "github.com/ExocoreNetwork/exocore/x/operator/types"
 	abci "github.com/cometbft/cometbft/abci/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	juno "github.com/forbole/juno/v5/types"
+	operatortypes "github.com/imua-xyz/imuachain/x/operator/types"
 
 	"github.com/forbole/callisto/v4/types"
 )

@@ -3,9 +3,9 @@ package local
 import (
 	"fmt"
 
-	assetstypes "github.com/ExocoreNetwork/exocore/x/assets/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/forbole/juno/v5/node/local"
+	assetstypes "github.com/imua-xyz/imuachain/x/assets/types"
 
 	assetssource "github.com/forbole/callisto/v4/modules/assets/source"
 )

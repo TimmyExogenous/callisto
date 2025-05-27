@@ -3,8 +3,8 @@ package database
 import (
 	"fmt"
 
-	assetstypes "github.com/ExocoreNetwork/exocore/x/assets/types"
 	"github.com/forbole/callisto/v4/types"
+	assetstypes "github.com/imua-xyz/imuachain/x/assets/types"
 )
 
 // SaveOperatorDetail saves the operator details into the database
@@ -172,15 +172,15 @@ func (db *Db) SlashUndelegationRecord(recordID, postSlashingAmount, slashedAmoun
 	if err != nil {
 		return fmt.Errorf("failed to get staker ID and asset ID from undelegation record: %w", err)
 	}
-	if assetID == assetstypes.ExocoreAssetID {
+	if assetID == assetstypes.ImuachainAssetID {
 		stmt = `
-		UPDATE exo_asset_delegation
+		UPDATE im_asset_delegation
 		SET lifetime_slashed = lifetime_slashed + $1,
 			pending_undelegation = pending_undelegation - $1
 		WHERE staker_id = $2;`
 		_, err = db.SQL.Exec(stmt, slashedAmount, stakerID)
 		if err != nil {
-			return fmt.Errorf("failed to update exo asset delegation lifetime slashed: %w", err)
+			return fmt.Errorf("failed to update im asset delegation lifetime slashed: %w", err)
 		}
 	} else {
 		stmt = `
@@ -205,65 +205,65 @@ func (db *Db) GetStakerIDAssetIDFromUndelegationRecord(recordID string) (string,
 	return stakerID, assetID, err
 }
 
-// AccumulateExoAssetDelegation accumulates the exo asset delegation amounts into the database.
+// AccumulateImAssetDelegation accumulates the im asset delegation amounts into the database.
 // It adds the new values to any existing values for delegated and pending_undelegation amounts.
 
-func (db *Db) AccumulateExoAssetDelegation(delegation *types.ExoAssetDelegation) error {
+func (db *Db) AccumulateImAssetDelegation(delegation *types.ImAssetDelegation) error {
 	stmt := `
-	INSERT INTO exo_asset_delegation (staker_id, delegated, pending_undelegation)
+	INSERT INTO im_asset_delegation (staker_id, delegated, pending_undelegation)
 	VALUES ($1, $2, $3)
 	ON CONFLICT (staker_id) DO UPDATE
-	SET delegated = exo_asset_delegation.delegated + EXCLUDED.delegated,
-		pending_undelegation = exo_asset_delegation.pending_undelegation + EXCLUDED.pending_undelegation;`
+	SET delegated = im_asset_delegation.delegated + EXCLUDED.delegated,
+		pending_undelegation = im_asset_delegation.pending_undelegation + EXCLUDED.pending_undelegation;`
 	_, err := db.SQL.Exec(stmt,
 		delegation.StakerID, delegation.Delegated, delegation.PendingUndelegation,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to accumulate exo asset delegation: %w", err)
+		return fmt.Errorf("failed to accumulate im asset delegation: %w", err)
 	}
 	return nil
 }
 
-// SlashExoAssetDelegation slashes the exo asset delegation. It updates the lifetime slashed amount
+// SlashImAssetDelegation slashes the im asset delegation. It updates the lifetime slashed amount
 // and the delegated amount.
-func (db *Db) SlashExoAssetDelegation(stakerID, amount string) error {
+func (db *Db) SlashImAssetDelegation(stakerID, amount string) error {
 	stmt := `
-	UPDATE exo_asset_delegation
-	SET lifetime_slashed = exo_asset_delegation.lifetime_slashed + $2,
-		delegated = exo_asset_delegation.delegated - $2
+	UPDATE im_asset_delegation
+	SET lifetime_slashed = im_asset_delegation.lifetime_slashed + $2,
+		delegated = im_asset_delegation.delegated - $2
 	WHERE staker_id = $1;`
 	_, err := db.SQL.Exec(stmt, stakerID, amount)
 	if err != nil {
-		return fmt.Errorf("failed to slash exo asset delegation: %w", err)
+		return fmt.Errorf("failed to slash im asset delegation: %w", err)
 	}
 	return nil
 }
 
-// UndelegateExoAsset undelegates an amount from the exo asset delegation. As a result of this
+// UndelegateImAsset undelegates an amount from the im asset delegation. As a result of this
 // undelegation, the amount is added to the pending_undelegation and subtracted from the delegated amount.
-func (db *Db) UndelegateExoAsset(stakerID, amount string) error {
+func (db *Db) UndelegateImAsset(stakerID, amount string) error {
 	stmt := `
-	UPDATE exo_asset_delegation
-	SET pending_undelegation = exo_asset_delegation.pending_undelegation + $2,
-		delegated = exo_asset_delegation.delegated - $3
+	UPDATE im_asset_delegation
+	SET pending_undelegation = im_asset_delegation.pending_undelegation + $2,
+		delegated = im_asset_delegation.delegated - $3
 	WHERE staker_id = $1;`
 	_, err := db.SQL.Exec(stmt, stakerID, amount)
 	if err != nil {
-		return fmt.Errorf("failed to undelegate exo asset: %w", err)
+		return fmt.Errorf("failed to undelegate im asset: %w", err)
 	}
 	return nil
 }
 
-// MatureExoAssetUndelegation matures the exo asset undelegation. It updates the pending_undelegation
+// MatureImAssetUndelegation matures the im asset undelegation. It updates the pending_undelegation
 // amount.
-func (db *Db) MatureExoAssetUndelegation(stakerID, amount string) error {
+func (db *Db) MatureImAssetUndelegation(stakerID, amount string) error {
 	stmt := `
-	UPDATE exo_asset_delegation
-	SET pending_undelegation = exo_asset_delegation.pending_undelegation - $2
+	UPDATE im_asset_delegation
+	SET pending_undelegation = im_asset_delegation.pending_undelegation - $2
 	WHERE staker_id = $1;`
 	_, err := db.SQL.Exec(stmt, stakerID, amount)
 	if err != nil {
-		return fmt.Errorf("failed to mature exo asset undelegation: %w", err)
+		return fmt.Errorf("failed to mature im asset undelegation: %w", err)
 	}
 	return nil
 }

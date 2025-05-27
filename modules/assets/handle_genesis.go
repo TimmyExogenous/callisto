@@ -8,7 +8,7 @@ import (
 
 	"github.com/forbole/callisto/v4/types"
 
-	assetstypes "github.com/ExocoreNetwork/exocore/x/assets/types"
+	assetstypes "github.com/imua-xyz/imuachain/x/assets/types"
 	"github.com/rs/zerolog/log"
 )
 

@@ -51,7 +51,7 @@ select_permissions:
     - address
     - decimals
     - layer_zero_chain_id
-    - exocore_chain_index
+    - imuachain_index
     - meta_info
     - staking_total_amount
     filter: {}

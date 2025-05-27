@@ -16,3 +16,5 @@ db_data
 
 # Private settings
 .vscode
+
+.nobackup

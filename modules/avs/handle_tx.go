@@ -3,9 +3,9 @@ package avs
 import (
 	"fmt"
 
-	avstypes "github.com/ExocoreNetwork/exocore/x/avs/types"
 	abci "github.com/cometbft/cometbft/abci/types"
 	juno "github.com/forbole/juno/v5/types"
+	avstypes "github.com/imua-xyz/imuachain/x/avs/types"
 )
 
 // HandleTx implements modules.TransactionModule

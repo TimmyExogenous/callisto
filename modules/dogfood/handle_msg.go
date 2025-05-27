@@ -5,9 +5,9 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/x/authz"
 
-	dogfoodtypes "github.com/ExocoreNetwork/exocore/x/dogfood/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	juno "github.com/forbole/juno/v5/types"
+	dogfoodtypes "github.com/imua-xyz/imuachain/x/dogfood/types"
 )
 
 // HandleMsgExec implements AuthzMessageModule. It handles the case wherein

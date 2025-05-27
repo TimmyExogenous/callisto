@@ -9,12 +9,12 @@ import (
 	"github.com/forbole/juno/v5/node/remote"
 	"github.com/forbole/juno/v5/types/params"
 
-	assetstypes "github.com/ExocoreNetwork/exocore/x/assets/types"
-	delegationtypes "github.com/ExocoreNetwork/exocore/x/delegation/types"
-	dogfoodkeeper "github.com/ExocoreNetwork/exocore/x/dogfood/keeper"
-	dogfoodtypes "github.com/ExocoreNetwork/exocore/x/dogfood/types"
-	epochstypes "github.com/ExocoreNetwork/exocore/x/epochs/types"
-	exominttypes "github.com/ExocoreNetwork/exocore/x/exomint/types"
+	assetstypes "github.com/imua-xyz/imuachain/x/assets/types"
+	delegationtypes "github.com/imua-xyz/imuachain/x/delegation/types"
+	dogfoodkeeper "github.com/imua-xyz/imuachain/x/dogfood/keeper"
+	dogfoodtypes "github.com/imua-xyz/imuachain/x/dogfood/types"
+	epochstypes "github.com/imua-xyz/imuachain/x/epochs/types"
+	imminttypes "github.com/imua-xyz/imuachain/x/immint/types"
 
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
@@ -34,9 +34,9 @@ import (
 	localslashingsource "github.com/forbole/callisto/v4/modules/slashing/source/local"
 	remoteslashingsource "github.com/forbole/callisto/v4/modules/slashing/source/remote"
 
-	exomintsource "github.com/forbole/callisto/v4/modules/exomint/source"
-	localexomintsource "github.com/forbole/callisto/v4/modules/exomint/source/local"
-	remoteexomintsource "github.com/forbole/callisto/v4/modules/exomint/source/remote"
+	immintsource "github.com/forbole/callisto/v4/modules/immint/source"
+	localimmintsource "github.com/forbole/callisto/v4/modules/immint/source/local"
+	remoteimmintsource "github.com/forbole/callisto/v4/modules/immint/source/remote"
 
 	assetssource "github.com/forbole/callisto/v4/modules/assets/source"
 	localassetssource "github.com/forbole/callisto/v4/modules/assets/source/local"
@@ -50,7 +50,7 @@ import (
 	localdogfoodsource "github.com/forbole/callisto/v4/modules/dogfood/source/local"
 	remotedogfoodsource "github.com/forbole/callisto/v4/modules/dogfood/source/remote"
 
-	exocoreapp "github.com/ExocoreNetwork/exocore/app"
+	imuachainapp "github.com/imua-xyz/imuachain/app"
 )
 
 type Sources struct {
@@ -61,7 +61,7 @@ type Sources struct {
 	SlashingSource slashingsource.Source
 	// StakingSource  stakingsource.Source
 	EpochsSource     epochssource.Source
-	ExomintSource    exomintsource.Source
+	ImmintSource     immintsource.Source
 	AssetsSource     assetssource.Source
 	DelegationSource delegationsource.Source
 	DogfoodSource    dogfoodsource.Source
@@ -85,7 +85,7 @@ func buildLocalSources(cfg *local.Details, encodingConfig params.EncodingConfig)
 		return nil, err
 	}
 
-	app := exocoreapp.NewExocoreApp(
+	app := imuachainapp.NewImuachainApp(
 		log.NewTMLogger(log.NewSyncWriter(os.Stdout)), source.StoreDB, nil, true, nil, cfg.Home,
 		0, simappparams.EncodingConfig{}, nil, nil,
 	)
@@ -97,7 +97,7 @@ func buildLocalSources(cfg *local.Details, encodingConfig params.EncodingConfig)
 		// MintSource:     localmintsource.NewSource(source, minttypes.QueryServer(app.MintKeeper)),
 		SlashingSource: localslashingsource.NewSource(source, slashingtypes.QueryServer(app.SlashingKeeper)),
 		EpochsSource:   localepochssource.NewSource(source, epochstypes.QueryServer(app.EpochsKeeper)),
-		ExomintSource:  localexomintsource.NewSource(source, exominttypes.QueryServer(app.ExomintKeeper)),
+		ImmintSource:   localimmintsource.NewSource(source, imminttypes.QueryServer(app.ImmintKeeper)),
 		// StakingSource:  localstakingsource.NewSource(source, stakingkeeper.Querier{Keeper: app.StakingKeeper}),
 		AssetsSource:     localassetssource.NewSource(source, assetstypes.QueryServer(app.AssetsKeeper)),
 		DelegationSource: localdelegationsource.NewSource(source, delegationtypes.QueryServer(&app.DelegationKeeper)),
@@ -142,7 +142,7 @@ func buildRemoteSources(cfg *remote.Details) (*Sources, error) {
 		SlashingSource: remoteslashingsource.NewSource(source, slashingtypes.NewQueryClient(source.GrpcConn)),
 		// StakingSource:  remotestakingsource.NewSource(source, stakingtypes.NewQueryClient(source.GrpcConn)),
 		EpochsSource:     remoteepochssource.NewSource(source, epochstypes.NewQueryClient(source.GrpcConn)),
-		ExomintSource:    remoteexomintsource.NewSource(source, exominttypes.NewQueryClient(source.GrpcConn)),
+		ImmintSource:     remoteimmintsource.NewSource(source, imminttypes.NewQueryClient(source.GrpcConn)),
 		AssetsSource:     remoteassetssource.NewSource(source, assetstypes.NewQueryClient(source.GrpcConn)),
 		DelegationSource: remotedelegationsource.NewSource(source, delegationtypes.NewQueryClient(source.GrpcConn)),
 		DogfoodSource:    remotedogfoodsource.NewSource(source, dogfoodtypes.NewQueryClient(source.GrpcConn)),

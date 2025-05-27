@@ -7,24 +7,24 @@ import (
 	"github.com/forbole/callisto/v4/types"
 )
 
-// SaveExomintParams allows to store the given params inside the database
-func (db *Db) SaveExomintParams(params *types.ExomintParams) error {
+// SaveImmintParams allows to store the given params inside the database
+func (db *Db) SaveImmintParams(params *types.ImmintParams) error {
 	paramsBz, err := json.Marshal(&params.Params)
 	if err != nil {
-		return fmt.Errorf("error while marshaling exomint params: %s", err)
+		return fmt.Errorf("error while marshaling immint params: %s", err)
 	}
 
 	stmt := `
-INSERT INTO exomint_params (params, height) 
+INSERT INTO immint_params (params, height) 
 VALUES ($1, $2)
 ON CONFLICT (one_row_id) DO UPDATE 
     SET params = excluded.params,
         height = excluded.height
-WHERE exomint_params.height <= excluded.height`
+WHERE immint_params.height <= excluded.height`
 
 	_, err = db.SQL.Exec(stmt, string(paramsBz), params.Height)
 	if err != nil {
-		return fmt.Errorf("error while storing exomint params: %s", err)
+		return fmt.Errorf("error while storing immint params: %s", err)
 	}
 
 	return nil
@@ -37,7 +37,7 @@ WHERE exomint_params.height <= excluded.height`
 // should be no conflicts.
 func (db *Db) AppendMintHistory(history *types.MintHistory) error {
 	stmt := `
-INSERT INTO exomint_history (block_height, quantity_minted, epoch_id, epoch_number, denom)
+INSERT INTO immint_history (block_height, quantity_minted, epoch_id, epoch_number, denom)
 VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (epoch_id, epoch_number) DO UPDATE SET 
 	block_height = EXCLUDED.block_height,

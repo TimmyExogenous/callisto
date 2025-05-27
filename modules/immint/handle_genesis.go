@@ -1,4 +1,4 @@
-package exomint
+package immint
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 
 	"github.com/forbole/callisto/v4/types"
 
-	exominttypes "github.com/ExocoreNetwork/exocore/x/exomint/types"
+	imminttypes "github.com/imua-xyz/imuachain/x/immint/types"
 	"github.com/rs/zerolog/log"
 )
 
@@ -17,16 +17,16 @@ func (m *Module) HandleGenesis(doc *tmtypes.GenesisDoc, appState map[string]json
 	log.Debug().Str("module", m.Name()).Msg("parsing genesis")
 
 	// Read the genesis state
-	var genState exominttypes.GenesisState
-	err := m.cdc.UnmarshalJSON(appState[exominttypes.ModuleName], &genState)
+	var genState imminttypes.GenesisState
+	err := m.cdc.UnmarshalJSON(appState[imminttypes.ModuleName], &genState)
 	if err != nil {
-		return fmt.Errorf("error while reading exomint genesis data: %s", err)
+		return fmt.Errorf("error while reading immint genesis data: %s", err)
 	}
 
 	// Save the params
-	err = m.db.SaveExomintParams(types.NewExomintParams(genState.Params, doc.InitialHeight))
+	err = m.db.SaveImmintParams(types.NewImmintParams(genState.Params, doc.InitialHeight))
 	if err != nil {
-		return fmt.Errorf("error while storing genesis exomint params: %s", err)
+		return fmt.Errorf("error while storing genesis immint params: %s", err)
 	}
 
 	return nil

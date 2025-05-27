@@ -3,7 +3,7 @@ package database
 import (
 	"fmt"
 
-	epochstypes "github.com/ExocoreNetwork/exocore/x/epochs/types"
+	epochstypes "github.com/imua-xyz/imuachain/x/epochs/types"
 )
 
 // SaveEpochs saves the given epochs into the database. This includes

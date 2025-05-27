@@ -3,10 +3,10 @@ package local
 import (
 	"fmt"
 
-	dogfoodtypes "github.com/ExocoreNetwork/exocore/x/dogfood/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/query"
 	"github.com/forbole/juno/v5/node/local"
+	dogfoodtypes "github.com/imua-xyz/imuachain/x/dogfood/types"
 
 	dogfoodsource "github.com/forbole/callisto/v4/modules/dogfood/source"
 )
@@ -49,13 +49,13 @@ func (s Source) GetParams(height int64) (dogfoodtypes.Params, error) {
 }
 
 // GetValidators implements dogfoodsource.Source
-func (s Source) GetValidators(height int64) ([]dogfoodtypes.ExocoreValidator, error) {
+func (s Source) GetValidators(height int64) ([]dogfoodtypes.ImuachainValidator, error) {
 	ctx, err := s.LoadHeight(height)
 	if err != nil {
 		return nil, fmt.Errorf("error while loading height: %s", err)
 	}
 
-	var validators []dogfoodtypes.ExocoreValidator
+	var validators []dogfoodtypes.ImuachainValidator
 	var nextKey []byte
 	var stop = false
 	for !stop {

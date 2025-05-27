@@ -1,18 +1,18 @@
 package types
 
 import (
-	exominttypes "github.com/ExocoreNetwork/exocore/x/exomint/types"
+	imminttypes "github.com/imua-xyz/imuachain/x/immint/types"
 )
 
-// ExomintParams represents the x/exomint parameters
-type ExomintParams struct {
-	exominttypes.Params
+// ImmintParams represents the x/immint parameters
+type ImmintParams struct {
+	imminttypes.Params
 	Height int64
 }
 
-// NewExomintParams allows to build a new ExomintParams instance
-func NewExomintParams(params exominttypes.Params, height int64) *ExomintParams {
-	return &ExomintParams{
+// NewImmintParams allows to build a new ImmintParams instance
+func NewImmintParams(params imminttypes.Params, height int64) *ImmintParams {
+	return &ImmintParams{
 		Params: params,
 		Height: height,
 	}

@@ -1,5 +1,5 @@
 table:
-  name: exomint_history
+  name: immint_history
   schema: public
 object_relationships:
 - name: epoch_state

@@ -7,7 +7,7 @@ import (
 
 	"github.com/forbole/callisto/v4/types"
 
-	dogfoodtypes "github.com/ExocoreNetwork/exocore/x/dogfood/types"
+	dogfoodtypes "github.com/imua-xyz/imuachain/x/dogfood/types"
 )
 
 // SaveDogfoodParams saves the dogfood params. It is called upon genesis and post

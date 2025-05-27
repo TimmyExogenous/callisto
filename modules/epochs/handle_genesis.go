@@ -6,7 +6,7 @@ import (
 
 	tmtypes "github.com/cometbft/cometbft/types"
 
-	epochstypes "github.com/ExocoreNetwork/exocore/x/epochs/types"
+	epochstypes "github.com/imua-xyz/imuachain/x/epochs/types"
 
 	"github.com/rs/zerolog/log"
 )

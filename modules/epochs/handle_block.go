@@ -3,10 +3,10 @@ package epochs
 import (
 	"fmt"
 
-	epochstypes "github.com/ExocoreNetwork/exocore/x/epochs/types"
 	abci "github.com/cometbft/cometbft/abci/types"
 	tmctypes "github.com/cometbft/cometbft/rpc/core/types"
 	juno "github.com/forbole/juno/v5/types"
+	epochstypes "github.com/imua-xyz/imuachain/x/epochs/types"
 	"github.com/rs/zerolog/log"
 )
 

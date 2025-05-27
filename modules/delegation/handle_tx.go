@@ -3,10 +3,10 @@ package delegation
 import (
 	"fmt"
 
-	assetstypes "github.com/ExocoreNetwork/exocore/x/assets/types"
-	delegationtypes "github.com/ExocoreNetwork/exocore/x/delegation/types"
 	abci "github.com/cometbft/cometbft/abci/types"
 	juno "github.com/forbole/juno/v5/types"
+	assetstypes "github.com/imua-xyz/imuachain/x/assets/types"
+	delegationtypes "github.com/imua-xyz/imuachain/x/delegation/types"
 
 	"github.com/forbole/callisto/v4/types"
 )
@@ -37,9 +37,9 @@ func (m *Module) HandleTx(tx *juno.Tx) error {
 	if err := m.handleAllStakersRemovedFromOperatorAsset(tx.Events); err != nil {
 		return fmt.Errorf("error while handling all stakers removed from operator asset updates: %s", err)
 	}
-	// tx driven exo asset delegation
-	if err := m.handleExoAssetDelegations(tx.Events); err != nil {
-		return fmt.Errorf("error while handling exo asset delegations: %s", err)
+	// tx driven im asset delegation
+	if err := m.handleImAssetDelegations(tx.Events); err != nil {
+		return fmt.Errorf("error while handling im asset delegations: %s", err)
 	}
 	// tx driven undelegation starts
 	if err := m.handleUndelegationStarts(tx.Events); err != nil {
@@ -201,10 +201,10 @@ func (m *Module) handleAllStakersRemovedFromOperatorAsset(events []abci.Event) e
 	return nil
 }
 
-// handleExoAssetDelegations handles the exo asset delegations.
+// handleImAssetDelegations handles the im asset delegations.
 // only triggered by transactions
-func (m *Module) handleExoAssetDelegations(events []abci.Event) error {
-	events = juno.FindEventsByType(events, delegationtypes.EventTypeExoAssetDelegation)
+func (m *Module) handleImAssetDelegations(events []abci.Event) error {
+	events = juno.FindEventsByType(events, delegationtypes.EventTypeImuaAssetDelegation)
 	for _, event := range events {
 		stakerID, err := juno.FindAttributeByKey(event, delegationtypes.AttributeKeyStakerID)
 		if err != nil {
@@ -214,11 +214,11 @@ func (m *Module) handleExoAssetDelegations(events []abci.Event) error {
 		if err != nil {
 			return fmt.Errorf("error while finding amount: %s", err)
 		}
-		delegation := types.NewExoAssetDelegationFromStr(
+		delegation := types.NewImAssetDelegationFromStr(
 			stakerID.Value, amount.Value, "0",
 		)
-		if err := m.db.AccumulateExoAssetDelegation(delegation); err != nil {
-			return fmt.Errorf("error while accumulating exo asset delegation: %s", err)
+		if err := m.db.AccumulateImAssetDelegation(delegation); err != nil {
+			return fmt.Errorf("error while accumulating im asset delegation: %s", err)
 		}
 	}
 	return nil
@@ -277,12 +277,12 @@ func (m *Module) handleUndelegationStarts(events []abci.Event) error {
 		if err := m.db.SaveUndelegationRecord(undelegation); err != nil {
 			return fmt.Errorf("error while saving undelegation record: %s", err)
 		}
-		// if there is an exo-asset undelegation, figure out what to do
+		// if there is an im-asset undelegation, figure out what to do
 		// (1) pending_undelegation += amount
 		// (2) delegated -= amount
-		if assetID.Value == assetstypes.ExocoreAssetID {
-			if err := m.db.UndelegateExoAsset(stakerID.Value, amount.Value); err != nil {
-				return fmt.Errorf("error while undelegating exo asset: %s", err)
+		if assetID.Value == assetstypes.ImuachainAssetID {
+			if err := m.db.UndelegateImAsset(stakerID.Value, amount.Value); err != nil {
+				return fmt.Errorf("error while undelegating im asset: %s", err)
 			}
 		}
 	}

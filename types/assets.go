@@ -3,7 +3,7 @@ package types
 import (
 	"fmt"
 
-	assetstypes "github.com/ExocoreNetwork/exocore/x/assets/types"
+	assetstypes "github.com/imua-xyz/imuachain/x/assets/types"
 )
 
 // AssetsParams represents the x/assets parameters
@@ -110,7 +110,7 @@ type ClientChain struct {
 	Name               string
 	MetaInfo           string
 	ChainId            string
-	ExocoreChainIndex  string
+	ImuaChainIndex     string
 	FinalizationBlocks string
 	LayerZeroChainID   string
 	SignatureType      string
@@ -123,7 +123,7 @@ func NewClientChain(info assetstypes.ClientChainInfo) *ClientChain {
 		Name:               info.Name,
 		MetaInfo:           info.MetaInfo,
 		ChainId:            fmt.Sprintf("%d", info.ChainId),
-		ExocoreChainIndex:  fmt.Sprintf("%d", info.ExocoreChainIndex),
+		ImuaChainIndex:     fmt.Sprintf("%d", info.ImuaChainIndex),
 		FinalizationBlocks: fmt.Sprintf("%d", info.FinalizationBlocks),
 		LayerZeroChainID:   fmt.Sprintf("%d", info.LayerZeroChainID),
 		SignatureType:      info.SignatureType,
@@ -134,7 +134,7 @@ func NewClientChain(info assetstypes.ClientChainInfo) *ClientChain {
 // NewClientChainFromStr creates a new ClientChain instance from the given
 // string versions of the fields.
 func NewClientChainFromStr(
-	name string, metaInfo string, chainId string, exocoreChainIndex string,
+	name string, metaInfo string, chainId string, imuachainIndex string,
 	finalizationBlocks string, layerZeroChainID string, signatureType string,
 	addressLength string,
 ) *ClientChain {
@@ -142,7 +142,7 @@ func NewClientChainFromStr(
 		Name:               name,
 		MetaInfo:           metaInfo,
 		ChainId:            chainId,
-		ExocoreChainIndex:  exocoreChainIndex,
+		ImuaChainIndex:     imuachainIndex,
 		FinalizationBlocks: finalizationBlocks,
 		LayerZeroChainID:   layerZeroChainID,
 		SignatureType:      signatureType,
@@ -153,30 +153,30 @@ func NewClientChainFromStr(
 // AssetsToken is a helper struct to represent an assetstypes.StakingAssetInfo with an assetID
 // string.
 type AssetsToken struct {
-	AssetID           string
-	Name              string
-	Symbol            string
-	Address           string
-	Decimals          string
-	LayerZeroChainID  string
-	ExocoreChainIndex string
-	MetaInfo          string
-	Amount            string
+	AssetID          string
+	Name             string
+	Symbol           string
+	Address          string
+	Decimals         string
+	LayerZeroChainID string
+	ImuaChainIndex   string
+	MetaInfo         string
+	Amount           string
 }
 
 // NewAssetsToken creates a new AssetsToken instance from the given assetstypes.StakingAssetInfo
 func NewAssetsToken(info *assetstypes.StakingAssetInfo) *AssetsToken {
 	basic := info.AssetBasicInfo
 	return &AssetsToken{
-		AssetID:           basic.AssetID(),
-		Name:              basic.Name,
-		Symbol:            basic.Symbol,
-		Address:           basic.Address,
-		Decimals:          fmt.Sprintf("%d", basic.Decimals),
-		LayerZeroChainID:  fmt.Sprintf("%d", basic.LayerZeroChainID),
-		ExocoreChainIndex: fmt.Sprintf("%d", basic.ExocoreChainIndex),
-		MetaInfo:          basic.MetaInfo,
-		Amount:            info.StakingTotalAmount.String(),
+		AssetID:          basic.AssetID(),
+		Name:             basic.Name,
+		Symbol:           basic.Symbol,
+		Address:          basic.Address,
+		Decimals:         fmt.Sprintf("%d", basic.Decimals),
+		LayerZeroChainID: fmt.Sprintf("%d", basic.LayerZeroChainID),
+		ImuaChainIndex:   fmt.Sprintf("%d", basic.ImuaChainIndex),
+		MetaInfo:         basic.MetaInfo,
+		Amount:           info.StakingTotalAmount.String(),
 	}
 }
 
@@ -184,17 +184,17 @@ func NewAssetsToken(info *assetstypes.StakingAssetInfo) *AssetsToken {
 // of the fields.
 func NewAssetsTokenFromStr(
 	assetID string, name string, symbol string, address string, decimals string,
-	layerZeroChainID string, exocoreChainIndex string, metaInfo string, amount string,
+	layerZeroChainID string, imuachainIndex string, metaInfo string, amount string,
 ) *AssetsToken {
 	return &AssetsToken{
-		AssetID:           assetID,
-		Name:              name,
-		Symbol:            symbol,
-		Address:           address,
-		Decimals:          decimals,
-		LayerZeroChainID:  layerZeroChainID,
-		ExocoreChainIndex: exocoreChainIndex,
-		MetaInfo:          metaInfo,
-		Amount:            amount,
+		AssetID:          assetID,
+		Name:             name,
+		Symbol:           symbol,
+		Address:          address,
+		Decimals:         decimals,
+		LayerZeroChainID: layerZeroChainID,
+		ImuaChainIndex:   imuachainIndex,
+		MetaInfo:         metaInfo,
+		Amount:           amount,
 	}
 }

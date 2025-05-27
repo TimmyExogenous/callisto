@@ -1,7 +1,7 @@
 package source
 
 import (
-	epochstypes "github.com/ExocoreNetwork/exocore/x/epochs/types"
+	epochstypes "github.com/imua-xyz/imuachain/x/epochs/types"
 )
 
 type Source interface {

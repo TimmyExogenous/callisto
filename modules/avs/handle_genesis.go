@@ -7,7 +7,7 @@ import (
 
 	tmtypes "github.com/cometbft/cometbft/types"
 
-	avstypes "github.com/ExocoreNetwork/exocore/x/avs/types"
+	avstypes "github.com/imua-xyz/imuachain/x/avs/types"
 	"github.com/rs/zerolog/log"
 )
 

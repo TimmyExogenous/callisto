@@ -16,7 +16,7 @@ select_permissions:
     - name
     - meta_info
     - chain_id
-    - exocore_chain_index
+    - imuachain_index
     - finalization_blocks
     - layer_zero_chain_id
     - signature_type

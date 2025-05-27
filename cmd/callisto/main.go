@@ -15,7 +15,7 @@ import (
 
 	"cosmossdk.io/simapp"
 
-	exocoreapp "github.com/ExocoreNetwork/exocore/app"
+	imuachainapp "github.com/imua-xyz/imuachain/app"
 
 	"github.com/forbole/callisto/v4/database"
 	"github.com/forbole/callisto/v4/modules"
@@ -58,7 +58,7 @@ func main() {
 func getBasicManagers() []module.BasicManager {
 	return []module.BasicManager{
 		simapp.ModuleBasics,
-		exocoreapp.ModuleBasics,
+		imuachainapp.ModuleBasics,
 	}
 }
 

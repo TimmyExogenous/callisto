@@ -3,8 +3,8 @@ package types
 import (
 	"fmt"
 
-	delegationtypes "github.com/ExocoreNetwork/exocore/x/delegation/types"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	delegationtypes "github.com/imua-xyz/imuachain/x/delegation/types"
 )
 
 // DelegationState is the state indexed by staker_id + asset_id + operator_addr
@@ -107,22 +107,22 @@ func NewUndelegationRecord(
 	)
 }
 
-// ExoAssetDelegation is the delegation state indexed by staker_id. It is equivalent to
+// ImAssetDelegation is the delegation state indexed by staker_id. It is equivalent to
 // the staker_assets table, but without the asset_id column.
 // It tracks the delegated amount, the amount pending undelegation, and the amount slashed (
 // via events, so not pictured here).
-type ExoAssetDelegation struct {
+type ImAssetDelegation struct {
 	StakerID            string
 	Delegated           string
 	PendingUndelegation string
 }
 
-// NewExoAssetDelegationFromStr creates a new ExoAssetDelegation instance using the given values in
+// NewImAssetDelegationFromStr creates a new ImAssetDelegation instance using the given values in
 // string format.
-func NewExoAssetDelegationFromStr(
+func NewImAssetDelegationFromStr(
 	stakerID, delegated, pendingUndelegation string,
-) *ExoAssetDelegation {
-	return &ExoAssetDelegation{
+) *ImAssetDelegation {
+	return &ImAssetDelegation{
 		StakerID:            stakerID,
 		Delegated:           delegated,
 		PendingUndelegation: pendingUndelegation,

@@ -5,7 +5,7 @@ import (
 
 	sdkmath "cosmossdk.io/math"
 
-	"github.com/ExocoreNetwork/exocore/x/operator/types"
+	"github.com/imua-xyz/imuachain/x/operator/types"
 )
 
 // Operator is the string version of operatortypes.OperatorInfo

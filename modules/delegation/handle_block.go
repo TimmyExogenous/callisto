@@ -7,9 +7,9 @@ import (
 	tmctypes "github.com/cometbft/cometbft/rpc/core/types"
 	juno "github.com/forbole/juno/v5/types"
 
-	assetstypes "github.com/ExocoreNetwork/exocore/x/assets/types"
-	delegationtypes "github.com/ExocoreNetwork/exocore/x/delegation/types"
-	operatortypes "github.com/ExocoreNetwork/exocore/x/operator/types"
+	assetstypes "github.com/imua-xyz/imuachain/x/assets/types"
+	delegationtypes "github.com/imua-xyz/imuachain/x/delegation/types"
+	operatortypes "github.com/imua-xyz/imuachain/x/operator/types"
 )
 
 // HandleBlock implements BlockModule
@@ -71,10 +71,10 @@ func (m *Module) handleUndelegationCompletions(height int64, events []abci.Event
 		if err != nil {
 			return fmt.Errorf("error while getting staker ID and asset ID from undelegation record: %s", err)
 		}
-		if assetID == assetstypes.ExocoreAssetID {
+		if assetID == assetstypes.ImuachainAssetID {
 			// reduce the pending undelegation amount
-			if err := m.db.MatureExoAssetUndelegation(stakerID, amount.Value); err != nil {
-				return fmt.Errorf("error while maturing exo asset undelegation: %s", err)
+			if err := m.db.MatureImAssetUndelegation(stakerID, amount.Value); err != nil {
+				return fmt.Errorf("error while maturing im asset undelegation: %s", err)
 			}
 		}
 	}
@@ -137,17 +137,17 @@ func (m *Module) handleDelegationSlashings(height int64, events []abci.Event) er
 				return fmt.Errorf("error while getting delegated amount: %s", err)
 			}
 			slashedAmount := prevAmount.Sub(delegatedAmount)
-			if assetID.Value != assetstypes.ExocoreAssetID {
+			if assetID.Value != assetstypes.ImuachainAssetID {
 				if err := m.db.SlashStakerDelegation(
 					stakerID, assetID.Value, slashedAmount.String(),
 				); err != nil {
 					return fmt.Errorf("error while accumulating staker lifetime slashing: %s", err)
 				}
 			} else {
-				if err := m.db.SlashExoAssetDelegation(
+				if err := m.db.SlashImAssetDelegation(
 					stakerID, slashedAmount.String(),
 				); err != nil {
-					return fmt.Errorf("error while slashing exo asset delegation: %s", err)
+					return fmt.Errorf("error while slashing im asset delegation: %s", err)
 				}
 			}
 		}

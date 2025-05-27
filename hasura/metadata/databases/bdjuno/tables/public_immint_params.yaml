@@ -1,5 +1,5 @@
 table:
-  name: exomint_params
+  name: immint_params
   schema: public
 select_permissions:
 - permission:

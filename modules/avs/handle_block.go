@@ -3,10 +3,10 @@ package avs
 import (
 	"fmt"
 
-	dogfoodtypes "github.com/ExocoreNetwork/exocore/x/dogfood/types"
 	abci "github.com/cometbft/cometbft/abci/types"
 	tmctypes "github.com/cometbft/cometbft/rpc/core/types"
 	juno "github.com/forbole/juno/v5/types"
+	dogfoodtypes "github.com/imua-xyz/imuachain/x/dogfood/types"
 )
 
 // HandleBlock implements BlockModule

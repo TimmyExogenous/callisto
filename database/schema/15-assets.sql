@@ -12,7 +12,7 @@ CREATE TABLE client_chains (
     name TEXT NOT NULL,
     meta_info TEXT NOT NULL,
     chain_id BIGINT,
-    exocore_chain_index BIGINT,
+    imuachain_index BIGINT,
     finalization_blocks BIGINT,
     layer_zero_chain_id BIGINT PRIMARY KEY,
     signature_type TEXT,
@@ -28,7 +28,7 @@ CREATE TABLE assets_tokens (
     address TEXT NOT NULL CHECK (address = lower(address)),
     decimals INT NOT NULL,
     layer_zero_chain_id BIGINT NOT NULL,
-    exocore_chain_index BIGINT NOT NULL,
+    imuachain_index BIGINT NOT NULL,
     meta_info TEXT,
     staking_total_amount NUMERIC NOT NULL DEFAULT 0,
     -- relational constraint

@@ -7,7 +7,7 @@ import (
 	"github.com/forbole/callisto/v4/modules/delegation"
 	"github.com/forbole/callisto/v4/modules/dogfood"
 	"github.com/forbole/callisto/v4/modules/epochs"
-	"github.com/forbole/callisto/v4/modules/exomint"
+	"github.com/forbole/callisto/v4/modules/immint"
 	"github.com/forbole/callisto/v4/modules/operator"
 	"github.com/forbole/callisto/v4/modules/types"
 
@@ -147,7 +147,7 @@ func (r *Registrar) BuildModules(ctx registrar.Context) jmodules.Modules {
 		// feemarkettypes.ModuleName,
 		epochs.NewModule(sources.EpochsSource, cdc, db),
 		// evmtypes.ModuleName,
-		exomint.NewModule(sources.ExomintSource, cdc, db),
+		immint.NewModule(sources.ImmintSource, cdc, db),
 		assets.NewModule(sources.AssetsSource, cdc, db),
 		avs.NewModule(cdc, db),
 		operator.NewModule(cdc, db),
@@ -167,7 +167,7 @@ func (r *Registrar) BuildModules(ctx registrar.Context) jmodules.Modules {
 		// consensusparamtypes.ModuleName,
 		// upgradetypes.ModuleName,
 		// rewardTypes.ModuleName,
-		// exoslashTypes.ModuleName,
+		// imslashTypes.ModuleName,
 		// distrtypes.ModuleName,
 		// crisistypes.ModuleName,
 	}

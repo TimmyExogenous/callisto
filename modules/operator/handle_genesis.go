@@ -9,9 +9,9 @@ import (
 
 	"github.com/forbole/callisto/v4/types"
 
-	keytypes "github.com/ExocoreNetwork/exocore/types/keys"
-	assetstypes "github.com/ExocoreNetwork/exocore/x/assets/types"
-	operatortypes "github.com/ExocoreNetwork/exocore/x/operator/types"
+	keytypes "github.com/imua-xyz/imuachain/types/keys"
+	assetstypes "github.com/imua-xyz/imuachain/x/assets/types"
+	operatortypes "github.com/imua-xyz/imuachain/x/operator/types"
 	"github.com/rs/zerolog/log"
 )
 

@@ -8,8 +8,8 @@ import (
 
 	"github.com/forbole/callisto/v4/types"
 
-	assetstypes "github.com/ExocoreNetwork/exocore/x/assets/types"
-	delegationtypes "github.com/ExocoreNetwork/exocore/x/delegation/types"
+	assetstypes "github.com/imua-xyz/imuachain/x/assets/types"
+	delegationtypes "github.com/imua-xyz/imuachain/x/delegation/types"
 	"github.com/rs/zerolog/log"
 )
 
@@ -41,10 +41,10 @@ func (m *Module) HandleGenesis(doc *tmtypes.GenesisDoc, appState map[string]json
 		if err := m.db.SaveDelegationState(wrappedState); err != nil {
 			return fmt.Errorf("error while saving delegation state: %s", err)
 		}
-		// capture the exoAssetDelegation state manually.
-		// this is because the exoAssetDelegation is not tracked in the assets module.
+		// capture the imAssetDelegation state manually.
+		// this is because the imAssetDelegation is not tracked in the assets module.
 		// the delegation module tracks it with a different logic, which we work around here.
-		if keys.AssetId == assetstypes.ExocoreAssetID {
+		if keys.AssetId == assetstypes.ImuachainAssetID {
 			// TODO: instead of GetDelegatedAmount, can we consider `TotalDelegatedAmountForStakerAsset` ?
 			// the advantage of that function, if implemented, is that it does not need the operator address.
 			delegatedAmount, err := m.source.GetDelegatedAmount(
@@ -53,12 +53,12 @@ func (m *Module) HandleGenesis(doc *tmtypes.GenesisDoc, appState map[string]json
 			if err != nil {
 				return fmt.Errorf("error while getting delegated amount: %s", err)
 			}
-			delegation := types.NewExoAssetDelegationFromStr(
+			delegation := types.NewImAssetDelegationFromStr(
 				keys.StakerId, delegatedAmount.String(),
 				state.States.WaitUndelegationAmount.String(),
 			)
-			if err := m.db.AccumulateExoAssetDelegation(delegation); err != nil {
-				return fmt.Errorf("error while accumulating exo asset delegation: %s", err)
+			if err := m.db.AccumulateImAssetDelegation(delegation); err != nil {
+				return fmt.Errorf("error while accumulating im asset delegation: %s", err)
 			}
 		}
 	}

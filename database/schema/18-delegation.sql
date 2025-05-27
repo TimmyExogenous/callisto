@@ -2,7 +2,7 @@
 -- We seperately track the impact of undelegations, native token delegations 
 -- (because no staker asset) and consequently some slashing.
 
-CREATE TABLE exo_asset_delegation (
+CREATE TABLE im_asset_delegation (
     -- include the staker_id _0x0 suffix for ease of use with the other tables
     staker_id TEXT NOT NULL,
     -- no need to store operator_addr because this is the equivalent of the

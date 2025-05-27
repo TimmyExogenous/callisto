@@ -35,7 +35,7 @@ WHERE assets_params.height <= excluded.height`
 // SaveClientChain inserts or updates a client chain record in the database
 func (db *Db) SaveOrUpdateClientChain(chain *types.ClientChain) error {
 	stmt := `
-INSERT INTO client_chains (name, meta_info, chain_id, exocore_chain_index, finalization_blocks, layer_zero_chain_id, signature_type, address_length)
+INSERT INTO client_chains (name, meta_info, chain_id, imuachain_index, finalization_blocks, layer_zero_chain_id, signature_type, address_length)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (layer_zero_chain_id) DO UPDATE
 	SET name = EXCLUDED.name,
@@ -50,7 +50,7 @@ ON CONFLICT (layer_zero_chain_id) DO UPDATE
 		chain.Name,
 		chain.MetaInfo,
 		chain.ChainId,
-		chain.ExocoreChainIndex,
+		chain.ImuaChainIndex,
 		chain.FinalizationBlocks,
 		chain.LayerZeroChainID,
 		chain.SignatureType,
@@ -69,7 +69,7 @@ func (db *Db) SaveAssetsToken(token *types.AssetsToken) error {
 	// A. slashing is applied to staker level, not the deposit amount.
 	//    so it is a good thing to retain the total deposit amount.
 	stmt := `
-INSERT INTO assets_tokens (asset_id, name, symbol, address, decimals, layer_zero_chain_id, exocore_chain_index, meta_info, staking_total_amount)
+INSERT INTO assets_tokens (asset_id, name, symbol, address, decimals, layer_zero_chain_id, imuachain_index, meta_info, staking_total_amount)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 ON CONFLICT (asset_id) DO UPDATE
 SET name = EXCLUDED.name,
@@ -77,7 +77,7 @@ SET name = EXCLUDED.name,
     address = EXCLUDED.address,
     decimals = EXCLUDED.decimals,
     layer_zero_chain_id = EXCLUDED.layer_zero_chain_id,
-    exocore_chain_index = EXCLUDED.exocore_chain_index,
+    imuachain_index = EXCLUDED.imuachain_index,
     meta_info = EXCLUDED.meta_info
 	staking_total_amount = EXCLUDED.staking_total_amount;`
 	_, err := db.SQL.Exec(stmt,
@@ -87,7 +87,7 @@ SET name = EXCLUDED.name,
 		token.Address,
 		token.Decimals,
 		token.LayerZeroChainID,
-		token.ExocoreChainIndex,
+		token.ImuaChainIndex,
 		token.MetaInfo,
 		token.Amount,
 	)

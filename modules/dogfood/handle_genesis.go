@@ -7,9 +7,9 @@ import (
 	tmtypes "github.com/cometbft/cometbft/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	keytypes "github.com/ExocoreNetwork/exocore/types/keys"
-	dogfoodtypes "github.com/ExocoreNetwork/exocore/x/dogfood/types"
 	junotypes "github.com/forbole/juno/v5/types"
+	keytypes "github.com/imua-xyz/imuachain/types/keys"
+	dogfoodtypes "github.com/imua-xyz/imuachain/x/dogfood/types"
 	"github.com/rs/zerolog/log"
 
 	callistotypes "github.com/forbole/callisto/v4/types"

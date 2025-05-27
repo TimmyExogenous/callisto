@@ -1,4 +1,4 @@
-package exomint
+package immint
 
 import (
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -7,7 +7,7 @@ import (
 
 	"github.com/forbole/juno/v5/modules"
 
-	exomintsource "github.com/forbole/callisto/v4/modules/exomint/source"
+	immintsource "github.com/forbole/callisto/v4/modules/immint/source"
 )
 
 var (
@@ -18,15 +18,15 @@ var (
 	_ modules.AuthzMessageModule = &Module{}
 )
 
-// Module implements x/exomint module
+// Module implements x/immint module
 type Module struct {
 	cdc    codec.Codec
 	db     *database.Db
-	source exomintsource.Source
+	source immintsource.Source
 }
 
 // NewModule builds a new Module instance
-func NewModule(source exomintsource.Source, cdc codec.Codec, db *database.Db) *Module {
+func NewModule(source immintsource.Source, cdc codec.Codec, db *database.Db) *Module {
 	return &Module{
 		cdc:    cdc,
 		db:     db,
@@ -36,5 +36,5 @@ func NewModule(source exomintsource.Source, cdc codec.Codec, db *database.Db) *M
 
 // Name implements modules.Module
 func (m *Module) Name() string {
-	return "exomint"
+	return "immint"
 }

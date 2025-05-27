@@ -3,9 +3,9 @@ package assets
 import (
 	"fmt"
 
-	assetstypes "github.com/ExocoreNetwork/exocore/x/assets/types"
 	abci "github.com/cometbft/cometbft/abci/types"
 	juno "github.com/forbole/juno/v5/types"
+	assetstypes "github.com/imua-xyz/imuachain/x/assets/types"
 
 	"github.com/forbole/callisto/v4/types"
 )
@@ -66,9 +66,9 @@ func (m *Module) handleClientChainEventsByType(events []abci.Event, ty string) e
 		if err != nil {
 			return fmt.Errorf("error while getting client chain ID: %s", err)
 		}
-		exocoreChainIdx, err := juno.FindAttributeByKey(event, assetstypes.AttributeKeyExocoreChainIdx)
+		imuachainIndex, err := juno.FindAttributeByKey(event, assetstypes.AttributeKeyImuachainIndex)
 		if err != nil {
-			return fmt.Errorf("error while getting exocore chain index: %s", err)
+			return fmt.Errorf("error while getting imuachain index: %s", err)
 		}
 		finalizationBlocks, err := juno.FindAttributeByKey(event, assetstypes.AttributeKeyFinalizationBlocks)
 		if err != nil {
@@ -88,7 +88,7 @@ func (m *Module) handleClientChainEventsByType(events []abci.Event, ty string) e
 		}
 		chain := types.NewClientChainFromStr(
 			name.Value, metaInfo.Value, chainId.Value,
-			exocoreChainIdx.Value, finalizationBlocks.Value,
+			imuachainIndex.Value, finalizationBlocks.Value,
 			lzID.Value, sigType.Value, addrLength.Value,
 		)
 		if err := m.db.SaveOrUpdateClientChain(chain); err != nil {
@@ -130,9 +130,9 @@ func (m *Module) handleNewTokenEvents(events []abci.Event) error {
 		if err != nil {
 			return fmt.Errorf("error while getting token meta info: %s", err)
 		}
-		exocoreChainIdx, err := juno.FindAttributeByKey(event, assetstypes.AttributeKeyExocoreChainIdx)
+		imuachainIndex, err := juno.FindAttributeByKey(event, assetstypes.AttributeKeyImuachainIndex)
 		if err != nil {
-			return fmt.Errorf("error while getting exocore chain index: %s", err)
+			return fmt.Errorf("error while getting imuachain index: %s", err)
 		}
 		stakingTotalAmount, err := juno.FindAttributeByKey(event, assetstypes.AttributeKeyTotalAmount)
 		if err != nil {
@@ -140,7 +140,7 @@ func (m *Module) handleNewTokenEvents(events []abci.Event) error {
 		}
 		token := types.NewAssetsTokenFromStr(
 			assetID.Value, name.Value, symbol.Value, address.Value, decimals.Value,
-			lzID.Value, metaInfo.Value, exocoreChainIdx.Value, stakingTotalAmount.Value,
+			lzID.Value, metaInfo.Value, imuachainIndex.Value, stakingTotalAmount.Value,
 		)
 		if err := m.db.SaveAssetsToken(token); err != nil {
 			return fmt.Errorf("error while saving token: %s", err)
