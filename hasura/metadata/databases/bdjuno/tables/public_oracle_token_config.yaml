@@ -16,3 +16,11 @@ array_relationships:
       table:
         name: oracle_price_history
         schema: public
+select_permissions:
+- permission:
+    allow_aggregations: false
+    columns:
+    - next_round_id
+    - token_id
+    filter: {}
+  role: anonymous

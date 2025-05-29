@@ -1,3 +1,12 @@
 table:
   name: oracle_params
   schema: public
+select_permissions:
+- permission:
+    allow_aggregations: false
+    columns:
+    - height
+    - one_row_id
+    - params
+    filter: {}
+  role: anonymous
