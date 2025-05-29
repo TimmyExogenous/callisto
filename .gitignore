@@ -12,6 +12,7 @@ coverage.*
 
 # Docker SQL data for dev
 db_data
+callisto-config
 .env
 
 # Private settings

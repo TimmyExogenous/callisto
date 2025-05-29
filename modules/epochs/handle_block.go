@@ -14,6 +14,8 @@ import (
 func (m *Module) HandleBlock(
 	block *tmctypes.ResultBlock, res *tmctypes.ResultBlockResults, _ []*juno.Tx, _ *tmctypes.ResultValidators,
 ) error {
+	log.Debug().Str("module", m.Name()).Int64("height", block.Block.Height).
+		Msg(fmt.Sprintf("updating %s", m.Name()))
 	if err := m.saveEpochStates(block.Block.Height, res.BeginBlockEvents); err != nil {
 		return fmt.Errorf("error while saving epoch states: %s", err)
 	}
@@ -24,8 +26,6 @@ func (m *Module) HandleBlock(
 
 // saveEpochStates saves the epoch states found in the given events
 func (m *Module) saveEpochStates(height int64, events []abci.Event) error {
-	log.Debug().Str("module", m.Name()).Int64("height", height).
-		Msg("updating epoch states")
 	// if an epoch start event is found, save the epoch state.
 	// this is preferred over epoch end, since, before this event, the state is
 	// updated to be correct.

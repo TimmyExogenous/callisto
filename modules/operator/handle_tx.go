@@ -73,6 +73,7 @@ func (m *Module) handleOperatorRegistrationEvents(events []abci.Event) error {
 		operator := types.NewOperatorFromStr(
 			addr.Value, addr.Value, metaInfo.Value,
 			rate.Value, maxCommissionRate.Value, maxChangeRate.Value,
+			// formatted via sdk.FormatTimeString, which we Parse later.
 			lastUpdateTime.Value,
 		)
 		err = m.db.SaveOperatorDetail(operator)

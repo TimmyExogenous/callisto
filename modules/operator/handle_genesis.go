@@ -113,5 +113,14 @@ func (m *Module) HandleGenesis(doc *tmtypes.GenesisDoc, appState map[string]json
 			return fmt.Errorf("error while removing operator cons key: %s", err)
 		}
 	}
+
+	// the constraint can be added only after the genesis.
+	// because we generate `operator_assets` under x/assets
+	// then we generate `operators` under x/operator,
+	// and we constraint them with a foreign key.
+	// the order is x/assets -> x/operator -> x/delegation.
+	if err := m.db.AddOperatorAssetConstraint(); err != nil {
+		return fmt.Errorf("error while adding operator asset constraint: %s", err)
+	}
 	return nil
 }

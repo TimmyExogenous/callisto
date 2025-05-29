@@ -1,0 +1,10 @@
+table:
+  name: oracle_asset_id_to_token_id
+  schema: public
+object_relationships:
+- name: assets_token
+  using:
+    foreign_key_constraint_on: asset_id
+- name: oracle_token_config
+  using:
+    foreign_key_constraint_on: token_id

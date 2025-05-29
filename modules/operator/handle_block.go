@@ -7,6 +7,7 @@ import (
 	tmctypes "github.com/cometbft/cometbft/rpc/core/types"
 	juno "github.com/forbole/juno/v5/types"
 	operatortypes "github.com/imua-xyz/imuachain/x/operator/types"
+	"github.com/rs/zerolog/log"
 
 	"github.com/forbole/callisto/v4/types"
 )
@@ -15,6 +16,8 @@ import (
 func (m *Module) HandleBlock(
 	block *tmctypes.ResultBlock, res *tmctypes.ResultBlockResults, _ []*juno.Tx, _ *tmctypes.ResultValidators,
 ) error {
+	log.Debug().Str("module", m.Name()).Int64("height", block.Block.Height).
+		Msg(fmt.Sprintf("updating %s", m.Name()))
 	if err := m.handleTxAndBeginBlockEvents(res.BeginBlockEvents); err != nil {
 		return fmt.Errorf("error while handling tx and begin block events: %s", err)
 	}

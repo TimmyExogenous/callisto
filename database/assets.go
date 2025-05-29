@@ -7,6 +7,7 @@ import (
 	sdkmath "cosmossdk.io/math"
 
 	"github.com/forbole/callisto/v4/types"
+	"github.com/rs/zerolog/log"
 )
 
 // SaveAssetsParams allows to store the given params inside the database
@@ -78,7 +79,7 @@ SET name = EXCLUDED.name,
     decimals = EXCLUDED.decimals,
     layer_zero_chain_id = EXCLUDED.layer_zero_chain_id,
     imuachain_index = EXCLUDED.imuachain_index,
-    meta_info = EXCLUDED.meta_info
+    meta_info = EXCLUDED.meta_info,
 	staking_total_amount = EXCLUDED.staking_total_amount;`
 	_, err := db.SQL.Exec(stmt,
 		token.AssetID,
@@ -94,6 +95,7 @@ SET name = EXCLUDED.name,
 	if err != nil {
 		return fmt.Errorf("failed to save token: %w", err)
 	}
+	log.Debug().Msgf("saved token %s", token.AssetID)
 	return nil
 }
 
@@ -135,26 +137,35 @@ WHERE asset_id = $2;`
 	return nil
 }
 
-// SaveStakerAsset saves a staker asset record in the database, including
-// an entry in the history table.
-func (db *Db) SaveStakerAsset(data *types.StakerAsset) error {
+// SaveStakerAsset saves a staker asset record in the database.
+func (db *Db) SaveStakerAsset(data *types.StakerAsset) error { // No lastUpdatedHeight here
 	stmt := `
-INSERT INTO staker_assets (staker_id, asset_id, deposited, withdrawable, pending_undelegation)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO staker_assets (
+    staker_id, asset_id,
+    deposited, withdrawable, pending_undelegation,
+    delegated, lifetime_slashed
+) 
+VALUES (
+    $1, $2,
+    $3, $4, $5,
+    ($3::numeric - $4::numeric - $5::numeric),
+    0
+)
 ON CONFLICT (staker_id, asset_id) DO UPDATE
-SET deposited = EXCLUDED.deposited,
-	withdrawable = EXCLUDED.withdrawable,
-	pending_undelegation = EXCLUDED.pending_undelegation,
-	delegated = EXCLUDED.deposited - EXCLUDED.withdrawable - EXCLUDED.pending_undelegation - staker_assets.lifetime_slashed,
-	lifetime_slashed = staker_assets.lifetime_slashed;`
+SET deposited = EXCLUDED.deposited, 
+    withdrawable = EXCLUDED.withdrawable,
+    pending_undelegation = EXCLUDED.pending_undelegation,
+    delegated = EXCLUDED.deposited - EXCLUDED.withdrawable - EXCLUDED.pending_undelegation - staker_assets.lifetime_slashed,
+    lifetime_slashed = staker_assets.lifetime_slashed;`
 
 	_, err := db.SQL.Exec(
 		stmt,
-		data.StakerID,
-		data.AssetID,
-		data.Deposited,
-		data.Withdrawable,
-		data.PendingUndelegation,
+		data.StakerID,            // $1
+		data.AssetID,             // $2
+		data.Deposited,           // $3
+		data.Withdrawable,        // $4
+		data.PendingUndelegation, // $5
+		// Only 5 arguments passed to Exec
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save staker asset: %w", err)
@@ -198,21 +209,36 @@ func (db *Db) SlashStakerDelegation(stakerID, assetID, slashedAmount string) err
 // This function is in `assets.go` because it is triggered by events in `x/assets`.
 func (db *Db) SaveOperatorAsset(data *types.OperatorAsset) error {
 	stmt := `
-INSERT INTO operator_assets (operator_addr, asset_id, total_amount, pending_undelegation_amount, total_share, self_share, other_share)
-VALUES ($1, $2, $3, $4, $5, $6, $5 - $6)
+INSERT INTO operator_assets (
+    operator_addr, asset_id,
+    total_amount, pending_undelegation_amount,
+    total_share, self_share,
+    other_share
+)
+VALUES (
+    $1, $2, $3, $4, $5, $6, 
+    ($5::numeric - $6::numeric) 
+)
 ON CONFLICT (operator_addr, asset_id) DO UPDATE
 SET total_amount = EXCLUDED.total_amount,
-	pending_undelegation_amount = EXCLUDED.pending_undelegation_amount,
-	total_share = EXCLUDED.total_share,
-	self_share = EXCLUDED.self_share,
-	other_share = EXCLUDED.total_share - EXCLUDED.self_share;`
+    pending_undelegation_amount = EXCLUDED.pending_undelegation_amount,
+    total_share = EXCLUDED.total_share,
+    self_share = EXCLUDED.self_share,
+    other_share = (EXCLUDED.total_share - EXCLUDED.self_share);`
+
 	_, err := db.SQL.Exec(
-		stmt, data.OperatorAddress, data.AssetID,
-		data.TotalAmount, data.PendingUndelegationAmount,
-		data.TotalShare, data.SelfShare,
+		stmt,
+		data.OperatorAddress,           // $1
+		data.AssetID,                   // $2
+		data.TotalAmount,               // $3 (string, PG converts to NUMERIC for column)
+		data.PendingUndelegationAmount, // $4 (string, PG converts to NUMERIC for column)
+		data.TotalShare,                // $5 (string, used in $5::numeric)
+		data.SelfShare,                 // $6 (string, used in $6::numeric)
 	)
 	if err != nil {
-		return fmt.Errorf("failed to save operator asset: %w", err)
+		// It's useful to log the inputs if an error occurs
+		return fmt.Errorf("failed to save operator asset (operator: %s, asset: %s, total_share: %s, self_share: %s): %w",
+			data.OperatorAddress, data.AssetID, data.TotalShare, data.SelfShare, err)
 	}
 	return nil
 }

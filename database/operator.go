@@ -15,6 +15,13 @@ func (db *Db) SaveOperatorDetail(operator *types.Operator) error {
 	if err != nil {
 		return fmt.Errorf("failed to parse time: %w", err)
 	}
+	// allow `nil` for ZERO time when the commission was never updated
+	var x interface{}
+	if parsed.IsZero() {
+		x = nil
+	} else {
+		x = parsed
+	}
 	// Insert into operators table
 	operatorStmt := `
 INSERT INTO operators (earnings_addr, approve_addr, operator_meta_info, commission_rate, max_commission_rate, max_change_rate, commission_last_updated)
@@ -34,8 +41,7 @@ SET approve_addr = EXCLUDED.approve_addr,
 		operator.Rate,
 		operator.MaxRate,
 		operator.MaxChangeRate,
-		// use the parsed time to convert 1:1 to database TIMESTAMP format
-		parsed,
+		x,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save operator details: %w", err)
@@ -48,10 +54,10 @@ SET approve_addr = EXCLUDED.approve_addr,
 // SaveOperatorConsKey saves the operator consensus key into the database
 func (db *Db) SaveOperatorConsKey(operatorAddr, chainID, pubkeyHex, consAddress string) error {
 	stmt := `
-INSERT INTO consensus_keys (operator_addr, chain_id, pubkey_hex, consensus_address)
+INSERT INTO consensus_keys (operator_addr, chain_id, pubkey_hex, cons_addr)
 VALUES ($1, $2, $3, $4)
 ON CONFLICT (operator_addr, chain_id) DO UPDATE
-SET consensus_address = EXCLUDED.consensus_address,
+SET cons_addr = EXCLUDED.cons_addr,
 	pubkey_hex = EXCLUDED.pubkey_hex;`
 	_, err := db.SQL.Exec(stmt, operatorAddr, chainID, pubkeyHex, consAddress)
 	if err != nil {
@@ -60,11 +66,11 @@ SET consensus_address = EXCLUDED.consensus_address,
 	return nil
 }
 
-// SaveOptedState inserts or updates an opted-in state into the avs_opt_ins table.
+// SaveOptedState inserts or updates an opted-in state into the operator_avs_opt_ins table.
 func (db *Db) SaveOptedState(data *types.Opted) error {
 	// Prepare the SQL statement
 	stmt := `
-INSERT INTO avs_opt_ins (operator_addr, avs_addr, slash_contract, opt_in_height, opt_out_height, jailed)
+INSERT INTO operator_avs_opt_ins (operator_addr, avs_addr, slash_contract, opt_in_height, opt_out_height, jailed)
 VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (operator_addr, avs_addr) DO UPDATE
 SET slash_contract = EXCLUDED.slash_contract,
@@ -92,28 +98,34 @@ SET slash_contract = EXCLUDED.slash_contract,
 
 // SaveOperatorUSDValue inserts or updates an operator USD value into the operator_usd_values table.
 func (db *Db) SaveOperatorUSDValue(data *types.OperatorUSDValue) error {
-	// Prepare the SQL statement
 	stmt := `
-INSERT INTO operator_usd_values (operator_addr, avs_addr, self_usd_value, total_usd_value, other_usd_value, active_usd_value)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO operator_usd_values (
+    operator_addr, avs_addr,
+    self_usd_value, total_usd_value, active_usd_value,
+    other_usd_value
+)
+VALUES (
+    $1, $2,
+    $3, $4, $5,
+    ($4::numeric - $3::numeric)
+)
 ON CONFLICT (operator_addr, avs_addr) DO UPDATE
 SET self_usd_value = EXCLUDED.self_usd_value,
-	total_usd_value = EXCLUDED.total_usd_value,
-	active_usd_value = EXCLUDED.active_usd_value;`
-
-	// Execute the SQL statement
+    total_usd_value = EXCLUDED.total_usd_value,
+    active_usd_value = EXCLUDED.active_usd_value,
+    other_usd_value = (EXCLUDED.total_usd_value::numeric - EXCLUDED.self_usd_value::numeric);`
 	_, err := db.SQL.Exec(
 		stmt,
 		data.OperatorAddress,
 		data.AvsAddress,
 		data.SelfUSDValue,
 		data.TotalUSDValue,
-		data.OtherUSDValue,
 		data.ActiveUSDValue,
 	)
 
 	if err != nil {
-		return fmt.Errorf("failed to save operator USD value: %w", err)
+		return fmt.Errorf("failed to save operator USD value (operator: %s, avs: %s, self: %s, total: %s, active: %s): %w",
+			data.OperatorAddress, data.AvsAddress, data.SelfUSDValue, data.TotalUSDValue, data.ActiveUSDValue, err)
 	}
 
 	return nil
@@ -244,6 +256,37 @@ WHERE operator_addr = $1 AND chain_id = $2;`
 
 	if err != nil {
 		return fmt.Errorf("failed to remove operator consensus key: %w", err)
+	}
+
+	return nil
+}
+
+// AddOperatorAssetConstraint adds a constraint to the operator_assets table
+// if it does not already exist.
+func (db *Db) AddOperatorAssetConstraint() error {
+	// SQL to check if the constraint already exists
+	checkStmt := `
+SELECT COUNT(1)
+FROM   pg_constraint
+WHERE  conrelid = 'operator_assets'::regclass
+AND    conname = 'fk_operator_addr';`
+
+	var count int
+	err := db.SQL.QueryRow(checkStmt).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("failed to check for existing constraint fk_operator_addr: %w", err)
+	}
+
+	// If the constraint does not exist (count is 0), then add it
+	if count == 0 {
+		addStmt := `
+ALTER TABLE operator_assets
+ADD CONSTRAINT fk_operator_addr
+FOREIGN KEY (operator_addr) REFERENCES operators (earnings_addr);`
+		_, err := db.SQL.Exec(addStmt)
+		if err != nil {
+			return fmt.Errorf("failed to add operator asset constraint fk_operator_addr: %w", err)
+		}
 	}
 
 	return nil

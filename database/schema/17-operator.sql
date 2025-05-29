@@ -6,7 +6,7 @@ CREATE TABLE operators (
     max_commission_rate NUMERIC NOT NULL,
     max_change_rate NUMERIC NOT NULL,
     -- we use ctx.BlockTime() which is in UTC, so drop the TZ
-    commission_last_updated TIMESTAMP WITHOUT TIME ZONE NOT NULL
+    commission_last_updated TIMESTAMP WITHOUT TIME ZONE
 );
 
 -- I made this table a bit separate because it is not used actively yet.
@@ -27,17 +27,12 @@ CREATE TABLE operator_avs_opt_ins (
     -- not 0 because height is opted into
     opt_in_height BIGINT NOT NULL,
     -- default is max height
-    opt_out_height BIGINT NOT NULL DEFAULT 18446744073709551615,
+    opt_out_height NUMERIC NOT NULL DEFAULT 18446744073709551615,
     jailed BOOLEAN NOT NULL DEFAULT FALSE,
     PRIMARY KEY (operator_addr, avs_addr),
     CONSTRAINT fk_avs_addr FOREIGN KEY (avs_addr) REFERENCES avs (avs_addr),
     CONSTRAINT fk_operator_addr FOREIGN KEY (operator_addr) REFERENCES operators (earnings_addr)
 );
-
--- this constraint can be added after the operators table is created
-ALTER TABLE operator_assets
-ADD CONSTRAINT fk_operator_addr
-FOREIGN KEY (operator_addr) REFERENCES operators (earnings_addr);
 
 CREATE TABLE consensus_keys (
     operator_addr TEXT NOT NULL,

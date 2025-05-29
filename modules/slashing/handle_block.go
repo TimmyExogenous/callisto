@@ -13,6 +13,8 @@ import (
 func (m *Module) HandleBlock(
 	block *tmctypes.ResultBlock, results *tmctypes.ResultBlockResults, _ []*juno.Tx, _ *tmctypes.ResultValidators,
 ) error {
+	log.Debug().Str("module", m.Name()).Int64("height", block.Block.Height).
+		Msg(fmt.Sprintf("updating %s", m.Name()))
 	// Update the signing infos
 	err := m.updateSigningInfo(block.Block.Height)
 	if err != nil {
@@ -24,8 +26,6 @@ func (m *Module) HandleBlock(
 
 // updateSigningInfo reads from the LCD the current staking pool and stores its value inside the database
 func (m *Module) updateSigningInfo(height int64) error {
-	log.Debug().Str("module", "slashing").Int64("height", height).Msg("updating signing info")
-
 	signingInfos, err := m.getSigningInfos(height)
 	if err != nil {
 		return err

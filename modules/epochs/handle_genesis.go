@@ -19,13 +19,13 @@ func (m *Module) HandleGenesis(doc *tmtypes.GenesisDoc, appState map[string]json
 	var genState epochstypes.GenesisState
 	err := m.cdc.UnmarshalJSON(appState[epochstypes.ModuleName], &genState)
 	if err != nil {
-		return fmt.Errorf("error while unmarshalling staking state: %s", err)
+		return fmt.Errorf("error while unmarshalling epochs state: %s", err)
 	}
 
 	// Save the epochs
 	err = m.db.SaveEpochs(genState.Epochs)
 	if err != nil {
-		return fmt.Errorf("error while storing genesis staking params: %s", err)
+		return fmt.Errorf("error while storing genesis epochs: %s", err)
 	}
 
 	return nil

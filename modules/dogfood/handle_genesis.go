@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	tmtypes "github.com/cometbft/cometbft/types"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	junotypes "github.com/forbole/juno/v5/types"
 	keytypes "github.com/imua-xyz/imuachain/types/keys"
@@ -54,7 +53,7 @@ func (m *Module) HandleGenesis(doc *tmtypes.GenesisDoc, appState map[string]json
 		)
 		votingPowers[i] = callistotypes.NewValidatorVotingPower(
 			consAddr,
-			sdk.TokensFromConsensusPower(validator.Power, sdk.DefaultPowerReduction).Int64(),
+			validator.Power,
 			doc.InitialHeight,
 		)
 	}
@@ -66,11 +65,13 @@ func (m *Module) HandleGenesis(doc *tmtypes.GenesisDoc, appState map[string]json
 		return fmt.Errorf("error while storing genesis dogfood validators: %s", err)
 	}
 
+	// at genesis, the block with such a height is not available. so it violates the foreign
+	// key constraint. this effectively prevents us from saving the vote powers at genesis..
 	// then we do the vote powers using the same x/staking function
-	err = m.db.SaveValidatorsVotingPowers(votingPowers)
-	if err != nil {
-		return fmt.Errorf("error while storing genesis dogfood validators voting powers: %s", err)
-	}
+	// err = m.db.SaveValidatorsVotingPowers(votingPowers)
+	// if err != nil {
+	// 	return fmt.Errorf("error while storing genesis dogfood validators voting powers: %s", err)
+	// }
 
 	// Opt out expiries
 	for _, levelOne := range genState.OptOutExpiries {

@@ -1,5 +1,5 @@
 table:
-  name: im_asset_delegation
+  name: im_asset_delegations
   schema: public
 select_permissions:
 - permission:

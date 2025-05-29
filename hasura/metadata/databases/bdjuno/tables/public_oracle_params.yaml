@@ -1,0 +1,3 @@
+table:
+  name: oracle_params
+  schema: public

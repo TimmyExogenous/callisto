@@ -1,0 +1,65 @@
+chain:
+  bech32_prefix: im
+  modules:
+    - "message_type"
+    - "messages"
+    - "telemetry"
+    - "pruning"
+    - "actions"
+    - "consensus"
+    - "daily refetch"
+    - "modules"
+    - "auth"
+    - "bank"
+    - "feegrant"
+    - "epochs"
+    - "immint"
+    - "assets"
+    - "avs"
+    - "operator"
+    - "delegation"
+    - "dogfood"
+    - "oracle"
+    - "slashing"
+
+telemetry:
+  port: 26658
+
+pruning:
+  keep_recent: 200000
+  keep_every: 10000
+  interval: 5000
+
+node:
+  type: remote
+  config:
+    rpc:
+      client_name: imuad
+      address: "http://localhost:26657"
+      max_connections: 20
+    grpc:
+      address: "localhost:9090"
+      insecure: true
+
+parsing:
+  workers: 1
+  start_height: 1
+  average_block_time: 5s
+  listen_new_blocks: true
+  parse_old_blocks: true
+  parse_genesis: true
+
+database:
+  url: "postgresql://user:password@localhost:5432/db_name?sslmode=disable&search_path=public"
+  max_open_connections: 10
+  max_idle_connections: 10
+  partition_size: 100000
+  partition_batch_size: 1000
+
+logging:
+  level: "debug"
+  format: "text"
+
+actions:
+  host: "callisto"
+  port: 3000

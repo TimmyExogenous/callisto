@@ -1,0 +1,5 @@
+.git
+.vscode
+*.env
+db_data/
+callisto-config/

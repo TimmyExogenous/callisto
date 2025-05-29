@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/forbole/juno/v5/types"
+	"github.com/pingcap/log"
 
 	tmctypes "github.com/cometbft/cometbft/rpc/core/types"
 )
@@ -12,6 +13,9 @@ import (
 func (m *Module) HandleBlock(
 	b *tmctypes.ResultBlock, _ *tmctypes.ResultBlockResults, _ []*types.Tx, _ *tmctypes.ResultValidators,
 ) error {
+	log.Debug().Str("module", m.Name()).Int64("height", b.Block.Height).
+		Msg(fmt.Sprintf("updating %s", m.Name()))
+
 	err := m.refreshDataUponSoftwareUpgrade(b.Block.Height)
 	if err != nil {
 		return fmt.Errorf("error while refreshing data upon software upgrade: %s", err)

@@ -1,0 +1,18 @@
+table:
+  name: oracle_token_config
+  schema: public
+array_relationships:
+- name: oracle_asset_id_to_token_ids
+  using:
+    foreign_key_constraint_on:
+      column: token_id
+      table:
+        name: oracle_asset_id_to_token_id
+        schema: public
+- name: oracle_price_histories
+  using:
+    foreign_key_constraint_on:
+      column: token_id
+      table:
+        name: oracle_price_history
+        schema: public

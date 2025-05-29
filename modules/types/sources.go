@@ -15,6 +15,7 @@ import (
 	dogfoodtypes "github.com/imua-xyz/imuachain/x/dogfood/types"
 	epochstypes "github.com/imua-xyz/imuachain/x/epochs/types"
 	imminttypes "github.com/imua-xyz/imuachain/x/immint/types"
+	oracletypes "github.com/imua-xyz/imuachain/x/oracle/types"
 
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
@@ -50,6 +51,10 @@ import (
 	localdogfoodsource "github.com/forbole/callisto/v4/modules/dogfood/source/local"
 	remotedogfoodsource "github.com/forbole/callisto/v4/modules/dogfood/source/remote"
 
+	oraclesource "github.com/forbole/callisto/v4/modules/oracle/source"
+	localoraclesource "github.com/forbole/callisto/v4/modules/oracle/source/local"
+	remoteoraclesource "github.com/forbole/callisto/v4/modules/oracle/source/remote"
+
 	imuachainapp "github.com/imua-xyz/imuachain/app"
 )
 
@@ -65,6 +70,7 @@ type Sources struct {
 	AssetsSource     assetssource.Source
 	DelegationSource delegationsource.Source
 	DogfoodSource    dogfoodsource.Source
+	OracleSource     oraclesource.Source
 }
 
 func BuildSources(nodeCfg nodeconfig.Config, encodingConfig params.EncodingConfig) (*Sources, error) {
@@ -102,6 +108,7 @@ func buildLocalSources(cfg *local.Details, encodingConfig params.EncodingConfig)
 		AssetsSource:     localassetssource.NewSource(source, assetstypes.QueryServer(app.AssetsKeeper)),
 		DelegationSource: localdelegationsource.NewSource(source, delegationtypes.QueryServer(&app.DelegationKeeper)),
 		DogfoodSource:    localdogfoodsource.NewSource(source, dogfoodkeeper.NewQueryServer(app.StakingKeeper)),
+		OracleSource:     localoraclesource.NewSource(source, oracletypes.QueryServer(app.OracleKeeper)),
 	}
 
 	// Mount and initialize the stores
@@ -146,5 +153,6 @@ func buildRemoteSources(cfg *remote.Details) (*Sources, error) {
 		AssetsSource:     remoteassetssource.NewSource(source, assetstypes.NewQueryClient(source.GrpcConn)),
 		DelegationSource: remotedelegationsource.NewSource(source, delegationtypes.NewQueryClient(source.GrpcConn)),
 		DogfoodSource:    remotedogfoodsource.NewSource(source, dogfoodtypes.NewQueryClient(source.GrpcConn)),
+		OracleSource:     remoteoraclesource.NewSource(source, oracletypes.NewQueryClient(source.GrpcConn)),
 	}, nil
 }

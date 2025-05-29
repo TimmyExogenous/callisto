@@ -1,8 +1,8 @@
 package config
 
 import (
-	"github.com/cosmos/cosmos-sdk/std"
 	"github.com/cosmos/cosmos-sdk/types/module"
+	"github.com/evmos/evmos/v16/encoding/codec"
 	"github.com/forbole/juno/v5/types/params"
 )
 
@@ -10,11 +10,12 @@ import (
 func MakeEncodingConfig(managers []module.BasicManager) func() params.EncodingConfig {
 	return func() params.EncodingConfig {
 		encodingConfig := params.MakeTestEncodingConfig()
-		std.RegisterLegacyAminoCodec(encodingConfig.Amino)
-		std.RegisterInterfaces(encodingConfig.InterfaceRegistry)
 		manager := mergeBasicManagers(managers)
 		manager.RegisterLegacyAminoCodec(encodingConfig.Amino)
 		manager.RegisterInterfaces(encodingConfig.InterfaceRegistry)
+		// register evmos codec - which contains the sdk codec
+		codec.RegisterInterfaces(encodingConfig.InterfaceRegistry)
+		codec.RegisterLegacyAminoCodec(encodingConfig.Amino)
 		return encodingConfig
 	}
 }

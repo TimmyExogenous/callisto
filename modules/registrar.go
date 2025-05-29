@@ -9,6 +9,7 @@ import (
 	"github.com/forbole/callisto/v4/modules/epochs"
 	"github.com/forbole/callisto/v4/modules/immint"
 	"github.com/forbole/callisto/v4/modules/operator"
+	"github.com/forbole/callisto/v4/modules/oracle"
 	"github.com/forbole/callisto/v4/modules/types"
 
 	"github.com/forbole/juno/v5/modules/pruning"
@@ -153,6 +154,7 @@ func (r *Registrar) BuildModules(ctx registrar.Context) jmodules.Modules {
 		operator.NewModule(cdc, db),
 		delegation.NewModule(sources.DelegationSource, cdc, db),
 		dogfood.NewModule(sources.DogfoodSource, cdc, db),
+		oracle.NewModule(sources.OracleSource, cdc, db),
 		// stakingtypes.ModuleName,
 		slashingModule,
 		// evidencetypes.ModuleName,

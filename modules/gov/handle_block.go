@@ -18,6 +18,8 @@ import (
 func (m *Module) HandleBlock(
 	b *tmctypes.ResultBlock, blockResults *tmctypes.ResultBlockResults, txs []*juno.Tx, _ *tmctypes.ResultValidators,
 ) error {
+	log.Debug().Str("module", m.Name()).Int64("height", b.Block.Height).
+		Msg(fmt.Sprintf("updating %s", m.Name()))
 	txEvents := collectTxEvents(txs)
 	err := m.updateProposalsStatus(b.Block.Height, txEvents, blockResults.EndBlockEvents)
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 
 	sdkmath "cosmossdk.io/math"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/imua-xyz/imuachain/x/operator/types"
 )
 
@@ -30,7 +31,7 @@ func NewOperator(t *types.OperatorInfo) *Operator {
 		Rate:                 t.Commission.Rate.String(),
 		MaxRate:              t.Commission.MaxRate.String(),
 		MaxChangeRate:        t.Commission.MaxChangeRate.String(),
-		CommissionUpdateTime: t.Commission.UpdateTime.String(),
+		CommissionUpdateTime: sdk.FormatTimeString(t.Commission.UpdateTime),
 	}
 }
 

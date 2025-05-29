@@ -17,6 +17,8 @@ import (
 func (m *Module) HandleBlock(
 	block *tmctypes.ResultBlock, res *tmctypes.ResultBlockResults, _ []*juno.Tx, vals *tmctypes.ResultValidators,
 ) error {
+	log.Debug().Str("module", m.Name()).Int64("height", block.Block.Height).
+		Msg(fmt.Sprintf("updating %s", m.Name()))
 	// Update the validators
 	_, err := m.updateValidators(block.Block.Height)
 	if err != nil {
@@ -31,9 +33,6 @@ func (m *Module) HandleBlock(
 
 // updateDoubleSignEvidence updates the double sign evidence of all validators
 func (m *Module) updateDoubleSignEvidence(height int64, evidenceList tmtypes.EvidenceList) {
-	log.Debug().Str("module", "staking").Int64("height", height).
-		Msg("updating double sign evidence")
-
 	var evidences []types.DoubleSignEvidence
 	for _, ev := range evidenceList {
 		dve, ok := ev.(*tmtypes.DuplicateVoteEvidence)

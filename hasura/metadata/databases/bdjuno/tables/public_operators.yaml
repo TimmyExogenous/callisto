@@ -64,7 +64,7 @@ array_relationships:
     foreign_key_constraint_on:
       column: operator_addr
       table:
-        name: staker_operator_association
+        name: staker_operator_associations
         schema: public
 - name: undelegation_records
   using:

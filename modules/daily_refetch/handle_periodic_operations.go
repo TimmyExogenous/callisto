@@ -17,7 +17,7 @@ func (m *Module) RegisterPeriodicOperations(scheduler *gocron.Scheduler) error {
 	log.Debug().Str("module", "daily refetch").Msg("setting up periodic tasks")
 
 	// Setup a cron job to run every midnight
-	if _, err := scheduler.Every(1).Day().At("00:00").Do(func() {
+	if _, err := scheduler.Every(5).Minutes().Do(func() {
 		m.refetchMissingBlocks()
 	}); err != nil {
 		return fmt.Errorf("error while setting up daily refetch periodic operation: %s", err)

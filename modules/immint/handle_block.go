@@ -18,6 +18,8 @@ import (
 func (m *Module) HandleBlock(
 	block *tmctypes.ResultBlock, res *tmctypes.ResultBlockResults, _ []*juno.Tx, _ *tmctypes.ResultValidators,
 ) error {
+	log.Debug().Str("module", m.Name()).Int64("height", block.Block.Height).
+		Msg(fmt.Sprintf("updating %s", m.Name()))
 	// x/immint does not have anything to do with txs or end blocker
 	if err := m.saveMintHistory(block.Block.Height, res.BeginBlockEvents); err != nil {
 		return fmt.Errorf("error while saving mint history: %s", err)
@@ -27,8 +29,6 @@ func (m *Module) HandleBlock(
 
 // saveEpochStates saves the mint history found in the given events
 func (m *Module) saveMintHistory(height int64, events []abci.Event) error {
-	log.Debug().Str("module", m.Name()).Int64("height", height).
-		Msg("updating mint history")
 	events = juno.FindEventsByType(events, imminttypes.EventTypeMint)
 	for _, event := range events {
 		amountAttr, err := juno.FindAttributeByKey(event, sdk.AttributeKeyAmount)

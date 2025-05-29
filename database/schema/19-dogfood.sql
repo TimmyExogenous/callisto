@@ -20,7 +20,7 @@ CREATE TABLE dogfood_params
 CREATE TABLE validator_voting_power
 (
     validator_address TEXT   NOT NULL REFERENCES validator (consensus_address) PRIMARY KEY,
-    voting_power      BIGINT NOT NULL,
+    voting_power      NUMERIC NOT NULL,
     height            BIGINT NOT NULL REFERENCES block (height)
 );
 CREATE INDEX validator_voting_power_height_index ON validator_voting_power (height);

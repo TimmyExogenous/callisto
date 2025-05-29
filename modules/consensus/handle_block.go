@@ -14,6 +14,8 @@ import (
 func (m *Module) HandleBlock(
 	b *tmctypes.ResultBlock, _ *tmctypes.ResultBlockResults, _ []*types.Tx, _ *tmctypes.ResultValidators,
 ) error {
+	log.Debug().Str("module", m.Name()).Int64("height", b.Block.Height).
+		Msg(fmt.Sprintf("updating %s", m.Name()))
 	err := m.updateBlockTimeFromGenesis(b)
 	if err != nil {
 		log.Error().Str("module", "consensus").Int64("height", b.Block.Height).
@@ -25,8 +27,6 @@ func (m *Module) HandleBlock(
 
 // updateBlockTimeFromGenesis insert average block time from genesis
 func (m *Module) updateBlockTimeFromGenesis(block *tmctypes.ResultBlock) error {
-	log.Trace().Str("module", "consensus").Int64("height", block.Block.Height).
-		Msg("updating block time from genesis")
 
 	genesis, err := m.db.GetGenesis()
 	if err != nil {

@@ -10,7 +10,7 @@ import (
 // SaveOperatorDetail saves the operator details into the database
 func (db *Db) SaveStakerOperatorAssociation(stakerID, operatorAddr string) error {
 	stmt := `
-	INSERT INTO staker_operator_association (staker_id, operator_addr)
+	INSERT INTO staker_operator_associations (staker_id, operator_addr)
 	VALUES ($1, $2)
 	ON CONFLICT (staker_id) DO UPDATE
 	SET operator_addr = EXCLUDED.operator_addr;`
@@ -24,7 +24,7 @@ func (db *Db) SaveStakerOperatorAssociation(stakerID, operatorAddr string) error
 // DeleteStakerOperatorAssociation deletes the staker operator association from the database.
 func (db *Db) DeleteStakerOperatorAssociation(stakerID string) error {
 	stmt := `
-	DELETE FROM staker_operator_association WHERE staker_id = $1;`
+	DELETE FROM staker_operator_associations WHERE staker_id = $1;`
 	_, err := db.SQL.Exec(stmt, stakerID)
 	if err != nil {
 		return fmt.Errorf("failed to delete staker operator association: %w", err)
@@ -35,7 +35,7 @@ func (db *Db) DeleteStakerOperatorAssociation(stakerID string) error {
 // SaveDelegationState saves the delegation state into the database
 func (db *Db) SaveDelegationState(state *types.DelegationState) error {
 	stmt := `
-	INSERT INTO delegation_state (staker_id, asset_id, operator_addr, undelegatable_share, wait_undelegation_amount)
+	INSERT INTO delegation_states (staker_id, asset_id, operator_addr, undelegatable_share, wait_undelegation_amount)
 	VALUES ($1, $2, $3, $4, $5)
 	ON CONFLICT (staker_id, asset_id, operator_addr) DO UPDATE
 	SET undelegatable_share = EXCLUDED.undelegatable_share, wait_undelegation_amount = EXCLUDED.wait_undelegation_amount;`
@@ -174,7 +174,7 @@ func (db *Db) SlashUndelegationRecord(recordID, postSlashingAmount, slashedAmoun
 	}
 	if assetID == assetstypes.ImuachainAssetID {
 		stmt = `
-		UPDATE im_asset_delegation
+		UPDATE im_asset_delegations
 		SET lifetime_slashed = lifetime_slashed + $1,
 			pending_undelegation = pending_undelegation - $1
 		WHERE staker_id = $2;`
@@ -210,11 +210,11 @@ func (db *Db) GetStakerIDAssetIDFromUndelegationRecord(recordID string) (string,
 
 func (db *Db) AccumulateImAssetDelegation(delegation *types.ImAssetDelegation) error {
 	stmt := `
-	INSERT INTO im_asset_delegation (staker_id, delegated, pending_undelegation)
+	INSERT INTO im_asset_delegations (staker_id, delegated, pending_undelegation)
 	VALUES ($1, $2, $3)
 	ON CONFLICT (staker_id) DO UPDATE
-	SET delegated = im_asset_delegation.delegated + EXCLUDED.delegated,
-		pending_undelegation = im_asset_delegation.pending_undelegation + EXCLUDED.pending_undelegation;`
+	SET delegated = im_asset_delegations.delegated + EXCLUDED.delegated,
+		pending_undelegation = im_asset_delegations.pending_undelegation + EXCLUDED.pending_undelegation;`
 	_, err := db.SQL.Exec(stmt,
 		delegation.StakerID, delegation.Delegated, delegation.PendingUndelegation,
 	)
@@ -228,9 +228,9 @@ func (db *Db) AccumulateImAssetDelegation(delegation *types.ImAssetDelegation) e
 // and the delegated amount.
 func (db *Db) SlashImAssetDelegation(stakerID, amount string) error {
 	stmt := `
-	UPDATE im_asset_delegation
-	SET lifetime_slashed = im_asset_delegation.lifetime_slashed + $2,
-		delegated = im_asset_delegation.delegated - $2
+	UPDATE im_asset_delegations
+	SET lifetime_slashed = im_asset_delegations.lifetime_slashed + $2,
+		delegated = im_asset_delegations.delegated - $2
 	WHERE staker_id = $1;`
 	_, err := db.SQL.Exec(stmt, stakerID, amount)
 	if err != nil {
@@ -243,9 +243,9 @@ func (db *Db) SlashImAssetDelegation(stakerID, amount string) error {
 // undelegation, the amount is added to the pending_undelegation and subtracted from the delegated amount.
 func (db *Db) UndelegateImAsset(stakerID, amount string) error {
 	stmt := `
-	UPDATE im_asset_delegation
-	SET pending_undelegation = im_asset_delegation.pending_undelegation + $2,
-		delegated = im_asset_delegation.delegated - $3
+	UPDATE im_asset_delegations
+	SET pending_undelegation = im_asset_delegations.pending_undelegation + $2,
+		delegated = im_asset_delegations.delegated - $3
 	WHERE staker_id = $1;`
 	_, err := db.SQL.Exec(stmt, stakerID, amount)
 	if err != nil {
@@ -258,8 +258,8 @@ func (db *Db) UndelegateImAsset(stakerID, amount string) error {
 // amount.
 func (db *Db) MatureImAssetUndelegation(stakerID, amount string) error {
 	stmt := `
-	UPDATE im_asset_delegation
-	SET pending_undelegation = im_asset_delegation.pending_undelegation - $2
+	UPDATE im_asset_delegations
+	SET pending_undelegation = im_asset_delegations.pending_undelegation - $2
 	WHERE staker_id = $1;`
 	_, err := db.SQL.Exec(stmt, stakerID, amount)
 	if err != nil {

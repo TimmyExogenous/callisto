@@ -20,6 +20,8 @@ import (
 func (m *Module) HandleBlock(
 	block *tmctypes.ResultBlock, res *tmctypes.ResultBlockResults, _ []*juno.Tx, _ *tmctypes.ResultValidators,
 ) error {
+	log.Debug().Str("module", m.Name()).Int64("height", block.Block.Height).
+		Msg(fmt.Sprintf("updating %s", m.Name()))
 	// validator set can only change at the end of a block, so can the voting power.
 	if err := m.handleLastTotalPowerUpdated(res.EndBlockEvents); err != nil {
 		return fmt.Errorf("error while handling dogfood last total power updated: %s", err)

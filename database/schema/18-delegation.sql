@@ -2,7 +2,7 @@
 -- We seperately track the impact of undelegations, native token delegations 
 -- (because no staker asset) and consequently some slashing.
 
-CREATE TABLE im_asset_delegation (
+CREATE TABLE im_asset_delegations (
     -- include the staker_id _0x0 suffix for ease of use with the other tables
     staker_id TEXT NOT NULL,
     -- no need to store operator_addr because this is the equivalent of the
@@ -34,7 +34,7 @@ CREATE TABLE delegation_states (
 );
 
 -- staker to operator such that staker is unique
-CREATE TABLE staker_operator_association (
+CREATE TABLE staker_operator_associations (
     staker_id TEXT NOT NULL,
     operator_addr TEXT NOT NULL,
     -- each staker_id is associated with at most one operator
@@ -46,7 +46,7 @@ CREATE TABLE staker_operator_association (
 );
 
 -- no need for PRIMARY KEY index because it is automatically indexed
-CREATE INDEX idx_association_by_operator ON staker_operator_association (operator_addr);
+CREATE INDEX idx_association_by_operator ON staker_operator_associations (operator_addr);
 
 -- track the stakers for each operator and asset
 CREATE TABLE operator_asset_stakers (

@@ -26,7 +26,9 @@ INSERT INTO epoch_definitions (identifier, start_time, duration)
 VALUES ($1, $2, $3)
 ON CONFLICT (identifier) DO NOTHING;`
 	for _, epoch := range epochs {
-		_, err := db.SQL.Exec(stmt, epoch.Identifier, epoch.StartTime, epoch.Duration)
+		// convert the duration to seconds so it fits inside INTERVAL
+		durationInSeconds := int64(epoch.Duration.Seconds())
+		_, err := db.SQL.Exec(stmt, epoch.Identifier, epoch.StartTime, durationInSeconds)
 		if err != nil {
 			return fmt.Errorf("error while saving epoch definitions: %s", err)
 		}

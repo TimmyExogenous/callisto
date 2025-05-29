@@ -1,5 +1,5 @@
 table:
-  name: staker_operator_association
+  name: staker_operator_associations
   schema: public
 object_relationships:
 - name: operator

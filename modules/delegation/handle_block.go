@@ -6,6 +6,7 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 	tmctypes "github.com/cometbft/cometbft/rpc/core/types"
 	juno "github.com/forbole/juno/v5/types"
+	"github.com/rs/zerolog/log"
 
 	assetstypes "github.com/imua-xyz/imuachain/x/assets/types"
 	delegationtypes "github.com/imua-xyz/imuachain/x/delegation/types"
@@ -16,6 +17,8 @@ import (
 func (m *Module) HandleBlock(
 	block *tmctypes.ResultBlock, res *tmctypes.ResultBlockResults, _ []*juno.Tx, _ *tmctypes.ResultValidators,
 ) error {
+	log.Debug().Str("module", m.Name()).Int64("height", block.Block.Height).
+		Msg(fmt.Sprintf("updating %s", m.Name()))
 	// slashing
 	if err := m.handleDelegationStateUpdates(res.BeginBlockEvents); err != nil {
 		return fmt.Errorf("error while handling slashing events: %s", err)
