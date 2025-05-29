@@ -1,11 +1,11 @@
 package operator
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 
 	tmtypes "github.com/cometbft/cometbft/types"
+	junotypes "github.com/forbole/juno/v5/types"
 
 	"github.com/forbole/callisto/v4/types"
 
@@ -34,12 +34,13 @@ func (m *Module) HandleGenesis(doc *tmtypes.GenesisDoc, appState map[string]json
 	for _, record := range genState.OperatorRecords {
 		addr := record.OperatorAddress
 		for _, detail := range record.Chains {
-			// already validated by the chain
 			wrappedKey := keytypes.NewWrappedConsKeyFromHex(detail.ConsensusKey)
-			// to avoid using our own chain's bech32-prefix, use the hex representation
-			// non-checksummed without "0x" prefix
-			consAddress := hex.EncodeToString(wrappedKey.ToConsAddr().Bytes())
-			if err := m.db.SaveOperatorConsKey(addr, detail.ChainID, detail.ConsensusKey, consAddress); err != nil {
+			consPubKey, err := junotypes.ConvertValidatorPubKeyToBech32String(wrappedKey.ToTmKey())
+			if err != nil {
+				return fmt.Errorf("error while converting validator pubkey to bech32 string: %s", err)
+			}
+			consAddress := wrappedKey.ToConsAddr().String()
+			if err := m.db.SaveOperatorConsKey(addr, detail.ChainID, consPubKey, consAddress); err != nil {
 				return fmt.Errorf("error while saving operator cons key: %s", err)
 			}
 		}

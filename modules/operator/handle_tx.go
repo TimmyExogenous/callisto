@@ -6,6 +6,8 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	juno "github.com/forbole/juno/v5/types"
+	junotypes "github.com/forbole/juno/v5/types"
+	keytypes "github.com/imua-xyz/imuachain/types/keys"
 	operatortypes "github.com/imua-xyz/imuachain/x/operator/types"
 
 	"github.com/forbole/callisto/v4/types"
@@ -136,7 +138,12 @@ func (m *Module) handleSetConsKey(events []abci.Event) error {
 		if err != nil {
 			return fmt.Errorf("error while getting consensus key hex: %s", err)
 		}
-		err = m.db.SaveOperatorConsKey(addr.Value, chainID.Value, consKeyHex.Value, consAddress.Value)
+		wrappedKey := keytypes.NewWrappedConsKeyFromHex(consKeyHex.Value)
+		consPubKey, err := junotypes.ConvertValidatorPubKeyToBech32String(wrappedKey.ToTmKey())
+		if err != nil {
+			return fmt.Errorf("error while converting validator pubkey to bech32 string: %s", err)
+		}
+		err = m.db.SaveOperatorConsKey(addr.Value, chainID.Value, consPubKey, consAddress.Value)
 		if err != nil {
 			return fmt.Errorf("error while saving operator cons key: %s", err)
 		}
@@ -156,6 +163,7 @@ func (m *Module) handleSetPrevConsKey(events []abci.Event) error {
 		if err != nil {
 			return fmt.Errorf("error while getting chain ID: %s", err)
 		}
+		// bech32
 		consAddress, err := juno.FindAttributeByKey(event, operatortypes.AttributeKeyConsensusAddress)
 		if err != nil {
 			return fmt.Errorf("error while getting consensus address: %s", err)
@@ -164,7 +172,12 @@ func (m *Module) handleSetPrevConsKey(events []abci.Event) error {
 		if err != nil {
 			return fmt.Errorf("error while getting consensus key hex: %s", err)
 		}
-		err = m.db.SaveOperatorConsKey(addr.Value, chainID.Value, consKeyHex.Value, consAddress.Value)
+		wrappedKey := keytypes.NewWrappedConsKeyFromHex(consKeyHex.Value)
+		consPubKey, err := junotypes.ConvertValidatorPubKeyToBech32String(wrappedKey.ToTmKey())
+		if err != nil {
+			return fmt.Errorf("error while converting validator pubkey to bech32 string: %s", err)
+		}
+		err = m.db.SaveOperatorPrevConsKey(addr.Value, chainID.Value, consPubKey, consAddress.Value)
 		if err != nil {
 			return fmt.Errorf("error while saving operator cons key: %s", err)
 		}
