@@ -12,6 +12,24 @@ object_relationships:
         name: proposal_validator_status_snapshot
         schema: public
 array_relationships:
+- name: fk_cons_key_current
+  using:
+    manual_configuration:
+      column_mapping:
+        consensus_address: cons_addr
+      insertion_order: null
+      remote_table:
+        name: consensus_keys
+        schema: public
+- name: fk_cons_key_old
+  using:
+    manual_configuration:
+      column_mapping:
+        consensus_address: prev_cons_addr
+      insertion_order: null
+      remote_table:
+        name: consensus_keys
+        schema: public
 - name: blocks
   using:
     foreign_key_constraint_on:
