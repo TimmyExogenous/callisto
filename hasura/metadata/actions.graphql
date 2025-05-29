@@ -10,3 +10,4 @@ type ActionBalance {
 }
 
 scalar ActionCoin
+

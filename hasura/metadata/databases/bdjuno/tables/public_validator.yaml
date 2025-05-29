@@ -33,6 +33,13 @@ array_relationships:
       table:
         name: pre_commit
         schema: public
+- name: proposal_validator_status_snapshots
+  using:
+    foreign_key_constraint_on:
+      column: validator_address
+      table:
+        name: proposal_validator_status_snapshot
+        schema: public
 - name: validator_signing_infos
   using:
     manual_configuration:
@@ -48,13 +55,6 @@ array_relationships:
       column: validator_address
       table:
         name: validator_voting_power
-        schema: public
-- name: proposal_validator_status_snapshots
-  using:
-    foreign_key_constraint_on:
-      column: validator_address
-      table:
-        name: proposal_validator_status_snapshot
         schema: public
 select_permissions:
 - permission:

@@ -2,15 +2,28 @@ table:
   name: message
   schema: public
 object_relationships:
+- name: message_type
+  using:
+    foreign_key_constraint_on: type
 - name: transaction
   using:
     manual_configuration:
-      remote_table:
-        schema: public
-        name: transaction
-      insertion_order:
       column_mapping:
         transaction_hash: hash
+      insertion_order: null
+      remote_table:
+        name: transaction
+        schema: public
+- name: transactionByPartitionIdTransactionHash
+  using:
+    manual_configuration:
+      column_mapping:
+        partition_id: partition_id
+        transaction_hash: hash
+      insertion_order: null
+      remote_table:
+        name: transaction
+        schema: public
 select_permissions:
 - permission:
     allow_aggregations: false

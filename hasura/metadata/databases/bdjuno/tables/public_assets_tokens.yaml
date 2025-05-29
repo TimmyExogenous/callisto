@@ -6,6 +6,13 @@ object_relationships:
   using:
     foreign_key_constraint_on: layer_zero_chain_id
 array_relationships:
+- name: oracle_asset_id_to_token_id
+  using:
+    foreign_key_constraint_on:
+      column: asset_id
+      table:
+        name: oracle_asset_id_to_token_id
+        schema: public
 - name: delegation_states
   using:
     foreign_key_constraint_on:
