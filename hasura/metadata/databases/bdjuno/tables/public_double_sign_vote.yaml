@@ -22,8 +22,8 @@ array_relationships:
         schema: public
 select_permissions:
 - permission:
-    columns:
     allow_aggregations: false
+    columns:
     - type
     - height
     - round
