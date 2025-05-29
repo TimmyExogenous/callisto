@@ -5,14 +5,14 @@ object_relationships:
 - name: client_chain
   using:
     foreign_key_constraint_on: layer_zero_chain_id
-array_relationships:
-- name: oracle_asset_id_to_token_id
+- name: oracleAssetIdToTokenIdByAssetId
   using:
     foreign_key_constraint_on:
       column: asset_id
       table:
         name: oracle_asset_id_to_token_id
         schema: public
+array_relationships:
 - name: delegation_states
   using:
     foreign_key_constraint_on:
@@ -33,6 +33,13 @@ array_relationships:
       column: asset_id
       table:
         name: operator_assets
+        schema: public
+- name: oracle_asset_id_to_token_id
+  using:
+    foreign_key_constraint_on:
+      column: asset_id
+      table:
+        name: oracle_asset_id_to_token_id
         schema: public
 - name: staker_assets
   using:
