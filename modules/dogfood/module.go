@@ -2,12 +2,10 @@ package dogfood
 
 import (
 	"github.com/cosmos/cosmos-sdk/codec"
-
 	"github.com/forbole/callisto/v4/database"
-
-	"github.com/forbole/juno/v5/modules"
-
 	dogfoodsource "github.com/forbole/callisto/v4/modules/dogfood/source"
+	"github.com/forbole/juno/v5/modules"
+	"github.com/forbole/juno/v5/types/config"
 )
 
 var (
@@ -23,13 +21,23 @@ type Module struct {
 	cdc    codec.Codec
 	db     *database.Db
 	source dogfoodsource.Source
+	cfg    *Config
 }
 
 // NeawModule builds a new Module instance
-func NewModule(source dogfoodsource.Source, cdc codec.Codec, db *database.Db) *Module {
+func NewModule(cfg config.Config, source dogfoodsource.Source, cdc codec.Codec, db *database.Db) *Module {
+	bz, err := cfg.GetBytes()
+	if err != nil {
+		panic(err)
+	}
+	dogfoodCfg, err := ParseConfig(bz)
+	if err != nil {
+		panic(err)
+	}
 	return &Module{
 		cdc:    cdc,
 		db:     db,
+		cfg:    dogfoodCfg,
 		source: source,
 	}
 }

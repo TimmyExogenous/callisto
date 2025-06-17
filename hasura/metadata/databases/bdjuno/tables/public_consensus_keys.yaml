@@ -14,9 +14,9 @@ select_permissions:
     columns:
     - operator_addr
     - chain_id
-    - pubkey_hex
+    - pubkey
     - cons_addr
-    - prev_pubkey_hex
+    - prev_pubkey
     - prev_cons_addr
     - is_removing
     filter: {}

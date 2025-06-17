@@ -43,6 +43,10 @@ func (m *Module) HandleGenesis(doc *tmtypes.GenesisDoc, appState map[string]json
 			if err := m.db.SaveOperatorConsKey(addr, detail.ChainID, consPubKey, consAddress); err != nil {
 				return fmt.Errorf("error while saving operator cons key: %s", err)
 			}
+			height := doc.InitialHeight
+			if err := m.db.SaveConsensusKeyAddition(addr, detail.ChainID, consPubKey, height); err != nil {
+				return fmt.Errorf("error while saving consensus key addition: %s", err)
+			}
 		}
 	}
 	// - operator opted in state
@@ -113,13 +117,18 @@ func (m *Module) HandleGenesis(doc *tmtypes.GenesisDoc, appState map[string]json
 		if err := m.db.MarkOperatorKeyRemoval(chainId, operatorAddr); err != nil {
 			return fmt.Errorf("error while removing operator cons key: %s", err)
 		}
+		if err := m.db.SetConsensusKeyRemovalRequested(chainId, operatorAddr, doc.InitialHeight); err != nil {
+			return fmt.Errorf("error while setting consensus key removal requested: %s", err)
+		}
 	}
 
 	// the constraint can be added only after the genesis.
-	// because we generate `operator_assets` under x/assets
-	// then we generate `operators` under x/operator,
-	// and we constraint them with a foreign key.
-	// the order is x/assets -> x/operator -> x/delegation.
+	// because we populate `operator_assets` under x/assets
+	// then we populate `operators` under x/operator, which is performed after x/assets.
+	// therefore, any such constraint can only be added after the data is populated.
+	// for a live chain, we populate an operator's creation event first, post which,
+	// any of their assets are populated (whether via a deposit or a delegation).
+	// so the population works as expected.
 	if err := m.db.AddOperatorAssetConstraint(); err != nil {
 		return fmt.Errorf("error while adding operator asset constraint: %s", err)
 	}

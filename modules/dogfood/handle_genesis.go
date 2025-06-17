@@ -56,6 +56,12 @@ func (m *Module) HandleGenesis(doc *tmtypes.GenesisDoc, appState map[string]json
 			validator.Power,
 			doc.InitialHeight,
 		)
+		// if first_activation_height is unset, it will also be set by this function.
+		if err := m.db.SetConsensusKeyLastActive(
+			m.cfg.ChainIDWithoutRevision, consPubKey, doc.InitialHeight,
+		); err != nil {
+			return fmt.Errorf("error while setting consensus key last active: %s", err)
+		}
 	}
 	// this function is the original one from x/staking or consensus
 	// it never deletes a validator; instead, to check if a validator is currently active,

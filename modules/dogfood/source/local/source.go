@@ -3,6 +3,8 @@ package local
 import (
 	"fmt"
 
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/query"
 	"github.com/forbole/juno/v5/node/local"
@@ -75,6 +77,18 @@ func (s Source) GetValidators(height int64) ([]dogfoodtypes.ImuachainValidator, 
 		nextKey = res.Pagination.NextKey
 		stop = len(res.Pagination.NextKey) == 0
 		validators = append(validators, res.Validators...)
+	}
+
+	// bug in x/dogfood prior to "fix: QoL changes (#357)"
+	// requires that we do the registration manually.
+	registry := codectypes.NewInterfaceRegistry()
+	cryptocodec.RegisterInterfaces(registry)
+
+	for i := range validators {
+		// this populates the Validator pubkey, which we do need.
+		if err := validators[i].UnpackInterfaces(registry); err != nil {
+			return nil, err
+		}
 	}
 
 	return validators, nil

@@ -40,9 +40,11 @@ array_relationships:
         schema: public
 - name: operator_assets
   using:
-    foreign_key_constraint_on:
-      column: operator_addr
-      table:
+    manual_configuration:
+      column_mapping:
+        earnings_addr: operator_addr
+      insertion_order: null
+      remote_table:
         name: operator_assets
         schema: public
 - name: operator_avs_opt_ins
@@ -75,7 +77,6 @@ array_relationships:
         schema: public
 select_permissions:
 - permission:
-    allow_aggregations: false
     columns:
     - earnings_addr
     - approve_addr

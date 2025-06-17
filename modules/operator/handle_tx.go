@@ -6,7 +6,6 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	juno "github.com/forbole/juno/v5/types"
-	junotypes "github.com/forbole/juno/v5/types"
 	keytypes "github.com/imua-xyz/imuachain/types/keys"
 	operatortypes "github.com/imua-xyz/imuachain/x/operator/types"
 
@@ -26,11 +25,14 @@ func (m *Module) HandleTx(tx *juno.Tx) error {
 		return fmt.Errorf("error while handling operator opt-in events: %s", err)
 	}
 	// set consensus key using CLI of x/operator
-	if err := m.handleSetConsKey(tx.Events); err != nil {
+	// this will directly update the key in the table consensus_keys
+	// and set the addition_height in the table consensus_keys_history
+	if err := m.handleSetConsKey(tx.Events, tx.Height); err != nil {
 		return fmt.Errorf("error while handling set cons key events: %s", err)
 	}
-	// change consensus key using CLI of x/operator
-	if err := m.handleSetPrevConsKey(tx.Events); err != nil {
+	// this will set the prev_pubkey and prev_cons_addr in the table consensus_keys
+	// this maps to the removal_requested_height in the table consensus_keys_history
+	if err := m.handleSetPrevConsKey(tx.Events, tx.Height); err != nil {
 		return fmt.Errorf("error while handling set prev cons key events: %s", err)
 	}
 	if err := m.handleTxAndBeginBlockEvents(tx.Events); err != nil {
@@ -38,7 +40,12 @@ func (m *Module) HandleTx(tx *juno.Tx) error {
 	}
 	// remove consensus key using CLI of x/operator by opting out
 	// do this after opt-out events are handled
-	if err := m.handleInitConsKeyRemoval(tx.Events); err != nil {
+	// this marks the removal_requested_height in the table consensus_keys_history
+	// it is guaranteed to not conflict with the handleSetPrevConsKey because
+	// (1) replacing key is you are opting out is not permitted
+	// (2) opting out while replacing key is permitted, but that doesn't conflict
+	// with our historical tracking (TODO)
+	if err := m.handleInitConsKeyRemoval(tx.Events, tx.Height); err != nil {
 		return fmt.Errorf("error while handling cons key removal events: %s", err)
 	}
 	return nil
@@ -119,13 +126,14 @@ func (m *Module) handleOptInEvents(events []abci.Event) error {
 }
 
 // handleSetConsKey handles the events emitted when an operator sets a consensus key.
-func (m *Module) handleSetConsKey(events []abci.Event) error {
+func (m *Module) handleSetConsKey(events []abci.Event, height int64) error {
 	events = juno.FindEventsByType(events, operatortypes.EventTypeSetConsKey)
 	for _, event := range events {
 		addr, err := juno.FindAttributeByKey(event, operatortypes.AttributeKeyOperator)
 		if err != nil {
 			return fmt.Errorf("error while getting operator address: %s", err)
 		}
+		// remember that this is the chainID without the suffix of version for our chain
 		chainID, err := juno.FindAttributeByKey(event, operatortypes.AttributeKeyChainID)
 		if err != nil {
 			return fmt.Errorf("error while getting chain ID: %s", err)
@@ -139,7 +147,7 @@ func (m *Module) handleSetConsKey(events []abci.Event) error {
 			return fmt.Errorf("error while getting consensus key hex: %s", err)
 		}
 		wrappedKey := keytypes.NewWrappedConsKeyFromHex(consKeyHex.Value)
-		consPubKey, err := junotypes.ConvertValidatorPubKeyToBech32String(wrappedKey.ToTmKey())
+		consPubKey, err := juno.ConvertValidatorPubKeyToBech32String(wrappedKey.ToTmKey())
 		if err != nil {
 			return fmt.Errorf("error while converting validator pubkey to bech32 string: %s", err)
 		}
@@ -147,12 +155,16 @@ func (m *Module) handleSetConsKey(events []abci.Event) error {
 		if err != nil {
 			return fmt.Errorf("error while saving operator cons key: %s", err)
 		}
+		err = m.db.SaveConsensusKeyAddition(addr.Value, chainID.Value, consPubKey, height)
+		if err != nil {
+			return fmt.Errorf("error while saving consensus key addition: %s", err)
+		}
 	}
 	return nil
 }
 
 // handleSetPrevConsKey handles the events emitted when an operator sets a previous consensus key.
-func (m *Module) handleSetPrevConsKey(events []abci.Event) error {
+func (m *Module) handleSetPrevConsKey(events []abci.Event, height int64) error {
 	events = juno.FindEventsByType(events, operatortypes.EventTypeSetPrevConsKey)
 	for _, event := range events {
 		addr, err := juno.FindAttributeByKey(event, operatortypes.AttributeKeyOperator)
@@ -173,13 +185,19 @@ func (m *Module) handleSetPrevConsKey(events []abci.Event) error {
 			return fmt.Errorf("error while getting consensus key hex: %s", err)
 		}
 		wrappedKey := keytypes.NewWrappedConsKeyFromHex(consKeyHex.Value)
-		consPubKey, err := junotypes.ConvertValidatorPubKeyToBech32String(wrappedKey.ToTmKey())
+		consPubKey, err := juno.ConvertValidatorPubKeyToBech32String(wrappedKey.ToTmKey())
 		if err != nil {
 			return fmt.Errorf("error while converting validator pubkey to bech32 string: %s", err)
 		}
 		err = m.db.SaveOperatorPrevConsKey(addr.Value, chainID.Value, consPubKey, consAddress.Value)
 		if err != nil {
 			return fmt.Errorf("error while saving operator cons key: %s", err)
+		}
+		// we have to set the removal_requested_height for the previous key
+		// inside the table consensus_keys_history
+		err = m.db.SetConsensusKeyRemovalRequested(chainID.Value, consPubKey, height)
+		if err != nil {
+			return fmt.Errorf("error while setting consensus key removal requested: %s", err)
 		}
 	}
 	return nil
@@ -228,7 +246,7 @@ func (m *Module) handleOptInfoUpdated(events []abci.Event) error {
 }
 
 // handleConsKeyRemoval handles the events emitted when an operator removes a consensus key.
-func (m *Module) handleInitConsKeyRemoval(events []abci.Event) error {
+func (m *Module) handleInitConsKeyRemoval(events []abci.Event, height int64) error {
 	events = juno.FindEventsByType(events, operatortypes.EventTypeInitRemoveConsKey)
 	for _, event := range events {
 		operatorAddr, err := juno.FindAttributeByKey(event, operatortypes.AttributeKeyOperator)
@@ -242,6 +260,19 @@ func (m *Module) handleInitConsKeyRemoval(events []abci.Event) error {
 		err = m.db.MarkOperatorKeyRemoval(chainID.Value, operatorAddr.Value)
 		if err != nil {
 			return fmt.Errorf("error while marking operator key removal: %s", err)
+		}
+		consKeyHex, err := juno.FindAttributeByKey(event, operatortypes.AttributeKeyConsKeyHex)
+		if err != nil {
+			return fmt.Errorf("error while getting consensus key hex: %s", err)
+		}
+		wrappedKey := keytypes.NewWrappedConsKeyFromHex(consKeyHex.Value)
+		consPubKey, err := juno.ConvertValidatorPubKeyToBech32String(wrappedKey.ToTmKey())
+		if err != nil {
+			return fmt.Errorf("error while converting validator pubkey to bech32 string: %s", err)
+		}
+		err = m.db.SetConsensusKeyRemovalRequested(chainID.Value, consPubKey, height)
+		if err != nil {
+			return fmt.Errorf("error while setting consensus key removal requested: %s", err)
 		}
 	}
 	return nil

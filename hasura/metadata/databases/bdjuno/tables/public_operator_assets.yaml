@@ -7,10 +7,15 @@ object_relationships:
     foreign_key_constraint_on: asset_id
 - name: operator
   using:
-    foreign_key_constraint_on: operator_addr
+    manual_configuration:
+      column_mapping:
+        operator_addr: earnings_addr
+      insertion_order: null
+      remote_table:
+        name: operators
+        schema: public
 select_permissions:
 - permission:
-    allow_aggregations: false
     columns:
     - operator_addr
     - asset_id

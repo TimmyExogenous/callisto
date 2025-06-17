@@ -1,6 +1,7 @@
 package database
 
 import (
+	"database/sql"
 	"fmt"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -52,16 +53,32 @@ SET approve_addr = EXCLUDED.approve_addr,
 }
 
 // SaveOperatorConsKey saves the operator consensus key into the database
-func (db *Db) SaveOperatorConsKey(operatorAddr, chainID, pubkeyHex, consAddress string) error {
+func (db *Db) SaveOperatorConsKey(operatorAddr, chainID, pubKey, consAddress string) error {
 	stmt := `
-INSERT INTO consensus_keys (operator_addr, chain_id, pubkey_hex, cons_addr)
+INSERT INTO consensus_keys (operator_addr, chain_id, pubkey, cons_addr)
 VALUES ($1, $2, $3, $4)
 ON CONFLICT (operator_addr, chain_id) DO UPDATE
 SET cons_addr = EXCLUDED.cons_addr,
-	pubkey_hex = EXCLUDED.pubkey_hex;`
-	_, err := db.SQL.Exec(stmt, operatorAddr, chainID, pubkeyHex, consAddress)
+	pubkey = EXCLUDED.pubkey;`
+	_, err := db.SQL.Exec(stmt, operatorAddr, chainID, pubKey, consAddress)
 	if err != nil {
 		return fmt.Errorf("failed to save operator consensus key: %w", err)
+	}
+	return nil
+}
+
+// SaveConsensusKeyAddition records a new consensus key with its addition height into the database.
+// It inserts a new row only if the combination (chain_id, pubkey, addition_height) doesn't exist.
+// No update is done on conflict – insertion only.
+func (db *Db) SaveConsensusKeyAddition(operatorAddr, chainID, pubKey string, additionHeight int64) error {
+	stmt := `
+INSERT INTO consensus_keys_history (
+    operator_addr, chain_id, pubkey, addition_height
+) VALUES ($1, $2, $3, $4)
+ON CONFLICT (chain_id, pubkey, addition_height) DO NOTHING;`
+	_, err := db.SQL.Exec(stmt, operatorAddr, chainID, pubKey, additionHeight)
+	if err != nil {
+		return fmt.Errorf("failed to insert consensus key addition: %w", err)
 	}
 	return nil
 }
@@ -180,11 +197,11 @@ WHERE avs_addr = $1;`
 
 // SaveOperatorPrevConsKey inserts or updates an operator's previous consensus key into the consensus_keys table.
 // TODO: it is not clear if this is even worth tracking.
-func (db *Db) SaveOperatorPrevConsKey(operatorAddr, chainID, pubkeyHex, consAddress string) error {
+func (db *Db) SaveOperatorPrevConsKey(operatorAddr, chainID, pubKey, consAddress string) error {
 	// Prepare the SQL statement to update previous consensus key fields
 	stmt := `
 UPDATE consensus_keys
-SET prev_pubkey_hex = $3,
+SET prev_pubkey = $3,
 	prev_cons_addr = $4
 WHERE operator_addr = $1 AND chain_id = $2;`
 
@@ -193,7 +210,7 @@ WHERE operator_addr = $1 AND chain_id = $2;`
 		stmt,
 		operatorAddr,
 		chainID,
-		pubkeyHex,
+		pubKey,
 		consAddress,
 	)
 
@@ -204,11 +221,124 @@ WHERE operator_addr = $1 AND chain_id = $2;`
 	return nil
 }
 
+// SetConsensusKeyRemovalRequested sets the removal_requested_height for the most recent
+// instance of a consensus key (by addition_height) on a given chain.
+// It errors if no matching key is found or if removal has already been requested.
+func (db *Db) SetConsensusKeyRemovalRequested(
+	chainID, pubKey string,
+	removalRequestedHeight int64,
+) error {
+	tx, err := db.SQL.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Step 1: Find latest entry (highest addition_height)
+	var additionHeight int64
+	var existing sql.NullInt64
+
+	query := `
+SELECT addition_height, removal_requested_height
+FROM consensus_keys_history
+WHERE chain_id = $1 AND pubkey = $2
+ORDER BY addition_height DESC
+LIMIT 1;`
+
+	err = tx.QueryRow(query, chainID, pubKey).Scan(&additionHeight, &existing)
+	if err != nil {
+		return fmt.Errorf("failed to find latest key entry: %w", err)
+	}
+
+	if existing.Valid {
+		return fmt.Errorf("removal_requested_height already set to %d for key", existing.Int64)
+	}
+
+	// Step 2: Set removal_requested_height
+	update := `
+UPDATE consensus_keys_history
+SET removal_requested_height = $1
+WHERE chain_id = $2 AND pubkey = $3 AND addition_height = $4;`
+
+	_, err = tx.Exec(update, removalRequestedHeight, chainID, pubKey, additionHeight)
+	if err != nil {
+		return fmt.Errorf("failed to update removal_requested_height: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit removal update: %w", err)
+	}
+
+	return nil
+}
+
+// SetConsensusKeyLastActive sets last_active_height for the latest instance of a consensus key.
+// It also sets first_activation_height if it has not already been set.
+func (db *Db) SetConsensusKeyLastActive(
+	chainID, pubkeyHex string,
+	activeHeight int64,
+) error {
+	// updates should be atomic
+	tx, err := db.SQL.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// guaranteed to exist. we need it because it's part of the primary key.
+	var additionHeight int64
+	// may be null
+	var lastActive, firstActive sql.NullInt64
+
+	// Step 1: Fetch the latest entry
+	query := `
+SELECT addition_height, last_active_height, first_activation_height
+FROM consensus_keys_history
+WHERE chain_id = $1 AND pubkey = $2
+ORDER BY addition_height DESC
+LIMIT 1;`
+
+	err = tx.QueryRow(query, chainID, pubkeyHex).Scan(&additionHeight, &lastActive, &firstActive)
+	if err != nil {
+		return fmt.Errorf("failed to find latest key entry: %w", err)
+	}
+
+	// not added to the validator set until now
+	if !firstActive.Valid {
+		stmt := `
+	UPDATE consensus_keys_history
+	SET first_activation_height = $1
+	WHERE chain_id = $2 AND pubkey = $3 AND addition_height = $4;`
+		_, err = tx.Exec(stmt, activeHeight, chainID, pubkeyHex, additionHeight)
+		if err != nil {
+			return fmt.Errorf("failed to set first_activation_height: %w", err)
+		}
+	}
+
+	// will probably always be true
+	if !lastActive.Valid || lastActive.Int64 < activeHeight {
+		stmt := `
+	UPDATE consensus_keys_history
+	SET last_active_height = $1
+	WHERE chain_id = $2 AND pubkey = $3 AND addition_height = $4;`
+		_, err = tx.Exec(stmt, activeHeight, chainID, pubkeyHex, additionHeight)
+		if err != nil {
+			return fmt.Errorf("failed to set last_active_height: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit key activity update: %w", err)
+	}
+
+	return nil
+}
+
 // ClearOperatorPrevConsKey clears an operator's previous consensus key from the consensus_keys table.
 func (db *Db) ClearOperatorPrevConsKey(operatorAddr, chainID string) error {
 	stmt := `
 UPDATE consensus_keys
-SET prev_pubkey_hex = NULL,
+SET prev_pubkey = NULL,
 	prev_cons_addr = NULL
 WHERE operator_addr = $1 AND chain_id = $2;`
 	_, err := db.SQL.Exec(stmt, operatorAddr, chainID)

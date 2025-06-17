@@ -1,0 +1,3 @@
+table:
+  name: consensus_keys_history
+  schema: public

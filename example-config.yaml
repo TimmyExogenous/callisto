@@ -30,6 +30,9 @@ pruning:
   keep_every: 10000
   interval: 5000
 
+dogfood:
+  chain_id_without_revision: "imuachaintestnet_233"
+
 node:
   type: remote
   config:

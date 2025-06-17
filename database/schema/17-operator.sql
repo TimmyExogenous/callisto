@@ -37,10 +37,10 @@ CREATE TABLE operator_avs_opt_ins (
 CREATE TABLE consensus_keys (
     operator_addr TEXT NOT NULL,
     chain_id TEXT NOT NULL,
-    pubkey_hex TEXT NOT NULL,
+    pubkey TEXT NOT NULL,
     cons_addr TEXT NOT NULL,
     -- optional, visible upon key rotation until pruned and thus can be NULL
-    prev_pubkey_hex TEXT,
+    prev_pubkey TEXT,
     prev_cons_addr TEXT,
     -- is_removing represents the situation in which the operator is in the process of opting out
     -- but has not yet completed the unbonding period
@@ -48,6 +48,43 @@ CREATE TABLE consensus_keys (
     PRIMARY KEY (operator_addr, chain_id),
     CONSTRAINT fk_operator_addr FOREIGN KEY (operator_addr) REFERENCES operators (earnings_addr),
     CONSTRAINT fk_chain_id FOREIGN KEY (chain_id) REFERENCES chain_id_to_avs_addr (chain_id)
+);
+
+CREATE TABLE consensus_keys_history (
+    chain_id TEXT NOT NULL,
+    pubkey TEXT NOT NULL,
+    operator_addr TEXT NOT NULL,
+    -- the im_height at which the key was added by the operator
+    addition_height BIGINT NOT NULL,
+    -- the first time a key was added to the validator set
+    -- can be null if the key is never added to the validator set
+    -- or if the chain_id is not imuachain's
+    first_activation_height BIGINT,
+    -- the last time a key was seen in the validator set
+    -- can be null if the key is never added to the validator set
+    -- or if the chain_id is not imuachain's
+    last_active_height BIGINT,
+    -- can be null if the key removal was not requested
+    -- it is tracked for non-imuachain chains as well
+    removal_requested_height BIGINT,
+    -- the chain does not permit operators to share keys
+    -- unless fully unbonded
+    PRIMARY KEY (chain_id, pubkey, addition_height),
+    CONSTRAINT height_check CHECK (
+        (
+            first_activation_height IS NULL OR
+            addition_height <= first_activation_height
+        ) AND
+        (
+            last_active_height IS NULL OR
+            first_activation_height IS NULL OR
+            first_activation_height <= last_active_height
+        ) AND
+        (
+            removal_requested_height IS NULL OR
+            last_active_height IS NULL OR last_active_height <= removal_requested_height
+        )
+    )
 );
 
 -- no correlation with NN-delegation.sql because the staker is not captured below.

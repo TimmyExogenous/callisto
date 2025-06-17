@@ -153,7 +153,7 @@ func (r *Registrar) BuildModules(ctx registrar.Context) jmodules.Modules {
 		avs.NewModule(cdc, db),
 		operator.NewModule(cdc, db),
 		delegation.NewModule(sources.DelegationSource, cdc, db),
-		dogfood.NewModule(sources.DogfoodSource, cdc, db),
+		dogfood.NewModule(ctx.JunoConfig, sources.DogfoodSource, cdc, db),
 		oracle.NewModule(sources.OracleSource, cdc, db),
 		// stakingtypes.ModuleName,
 		slashingModule,

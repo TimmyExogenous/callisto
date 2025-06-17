@@ -12,12 +12,12 @@ import (
 )
 
 // SaveValidatorData saves properly the information about the given validator.
-func (db *Db) SaveValidatorData(validator types.Validator) error {
-	return db.SaveValidatorsData([]types.Validator{validator})
+func (db *Db) SaveValidatorData(validator types.Validator, chainID string) error {
+	return db.SaveValidatorsData([]types.Validator{validator}, chainID)
 }
 
 // SaveValidatorsData allows the bulk saving of a list of validators.
-func (db *Db) SaveValidatorsData(validators []types.Validator) error {
+func (db *Db) SaveValidatorsData(validators []types.Validator, chainID string) error {
 	if len(validators) == 0 {
 		return nil
 	}

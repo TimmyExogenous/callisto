@@ -13,6 +13,7 @@
 - "!include public_client_chains.yaml"
 - "!include public_consensus_addrs_to_prune.yaml"
 - "!include public_consensus_keys.yaml"
+- "!include public_consensus_keys_history.yaml"
 - "!include public_delegation_states.yaml"
 - "!include public_dogfood_params.yaml"
 - "!include public_double_sign_evidence.yaml"

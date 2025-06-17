@@ -10,6 +10,8 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 	tmctypes "github.com/cometbft/cometbft/rpc/core/types"
 	juno "github.com/forbole/juno/v5/types"
+	junotypes "github.com/forbole/juno/v5/types"
+	keytypes "github.com/imua-xyz/imuachain/types/keys"
 	dogfoodtypes "github.com/imua-xyz/imuachain/x/dogfood/types"
 
 	tmtypes "github.com/cometbft/cometbft/types"
@@ -83,6 +85,39 @@ func (m *Module) handleValidatorSetChange(height int64, events []abci.Event) err
 	}
 	if err := m.db.SaveValidatorsVotingPowers(votingPowers); err != nil {
 		return fmt.Errorf("error while saving validator voting powers: %s", err)
+	}
+	// we will now set the last_active_height in the table consensus_keys_history
+	// the parameters required to identify a key uniquely are:
+	// (1) chain_id
+	// (2) the key itself
+	// sort by addition_height DESC, get first
+	// this is sufficient because a key is deemed to be in-use by some operator
+	// if an operator address can be looked up from chainID + consAddr (key).
+	// the source has given us the key, we have the active height, and the
+	// configuration has the chain ID without revision.
+	for i, validator := range validators {
+		if votingPowers[i].VotingPower <= 0 {
+			// inactive
+			continue
+		}
+		// this is a type.Any, we have to decode it.
+		key, err := validator.ConsPubKey()
+		if err != nil {
+			return fmt.Errorf("error while getting consensus pub key: %s", err)
+		}
+		wrappedKey := keytypes.NewWrappedConsKeyFromSdkKey(key)
+		if wrappedKey == nil {
+			return fmt.Errorf("error while getting wrapped consensus key")
+		}
+		consPubKey, err := junotypes.ConvertValidatorPubKeyToBech32String(wrappedKey.ToTmKey())
+		if err != nil {
+			return fmt.Errorf("error while converting validator pubkey to bech32 string: %s", err)
+		}
+		// if first_activation_height is unset, it will also be set by this function.
+		err = m.db.SetConsensusKeyLastActive(m.cfg.ChainIDWithoutRevision, consPubKey, height)
+		if err != nil {
+			return fmt.Errorf("error while setting consensus key last active: %s", err)
+		}
 	}
 	return nil
 }
