@@ -36,6 +36,7 @@
 - "!include public_operator_asset_stakers.yaml"
 - "!include public_operator_assets.yaml"
 - "!include public_operator_avs_opt_ins.yaml"
+- "!include public_operator_consensus_status_structure.yaml"
 - "!include public_operator_usd_values.yaml"
 - "!include public_operators.yaml"
 - "!include public_opt_out_expiries.yaml"

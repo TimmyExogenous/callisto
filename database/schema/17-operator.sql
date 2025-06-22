@@ -88,6 +88,66 @@ CREATE TABLE consensus_keys_history (
     )
 );
 
+-- needed for Hasura
+CREATE OR REPLACE VIEW operator_consensus_status_structure AS
+SELECT
+    NULL::BIGINT AS first_activation_height,
+    NULL::BIGINT AS last_active_height,
+    NULL::BOOLEAN AS currently_in_set,
+    NULL::TEXT AS last_active_cons_addr;
+CREATE OR REPLACE FUNCTION get_operator_consensus_status(
+    in_operator_addr TEXT,
+    in_chain_id TEXT
+)
+RETURNS SETOF operator_consensus_status_structure
+LANGUAGE plpgsql
+STABLE
+AS $$
+BEGIN
+    RETURN QUERY
+    WITH relevant_keys AS (
+        SELECT *
+        FROM consensus_keys_history h
+        WHERE h.operator_addr = in_operator_addr
+          AND h.chain_id = in_chain_id
+          AND h.first_activation_height IS NOT NULL
+    ),
+    first_height AS (
+        SELECT MIN(rk.first_activation_height) AS fah
+        FROM relevant_keys rk
+    ),
+    last_height AS (
+        SELECT MAX(rk.last_active_height) AS lah
+        FROM relevant_keys rk
+    ),
+    active_keys AS (
+        SELECT rk.cons_addr
+        FROM relevant_keys rk
+        WHERE rk.last_active_height IS NULL
+        ORDER BY rk.first_activation_height DESC
+        LIMIT 1
+    ),
+    fallback_last_active AS (
+        SELECT rk.cons_addr
+        FROM relevant_keys rk
+        WHERE rk.last_active_height IS NOT NULL
+        ORDER BY rk.last_active_height DESC
+        LIMIT 1
+    )
+    SELECT
+        (SELECT fah FROM first_height) AS first_activation_height,
+        (SELECT lah FROM last_height) AS last_active_height,
+        EXISTS (
+            SELECT 1 FROM relevant_keys WHERE last_active_height IS NULL
+        ) AS currently_in_set,
+        COALESCE(
+            (SELECT cons_addr FROM active_keys),
+            (SELECT cons_addr FROM fallback_last_active)
+        ) AS last_active_cons_addr
+    GROUP BY in_operator_addr, in_chain_id;
+END;
+$$;
+
 -- no correlation with NN-delegation.sql because the staker is not captured below.
 CREATE TABLE operator_usd_values (
     operator_addr TEXT NOT NULL,

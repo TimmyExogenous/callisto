@@ -1,0 +1,13 @@
+table:
+  name: operator_consensus_status_structure
+  schema: public
+select_permissions:
+- permission:
+    columns:
+    - first_activation_height
+    - last_active_height
+    - currently_in_set
+    - last_active_cons_addr
+    filter: {}
+    limit: 10
+  role: anonymous

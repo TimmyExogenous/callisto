@@ -109,23 +109,6 @@ CREATE TABLE staker_asset_events (
     -- no foreign key for the staker, since it is not primary key in staker_assets
 );
 
-CREATE OR REPLACE FUNCTION get_latest_staker_assets(
-    p_staker_id TEXT,
-    p_asset_id TEXT
-) RETURNS TABLE (
-    deposited NUMERIC,
-    withdrawable NUMERIC,
-    pending_undelegation NUMERIC,
-    delegated NUMERIC,
-    lifetime_slashed NUMERIC
-) AS $$
-BEGIN
-    RETURN QUERY SELECT deposited, withdrawable, pending_undelegation, delegated, lifetime_slashed
-    FROM staker_assets
-    WHERE staker_id = p_staker_id AND asset_id = p_asset_id;
-END;
-$$ LANGUAGE plpgsql;
-
 -- this table shared with x/operator and x/assets because
 -- assets for an operator can only be tracked after the operator is created
 CREATE TABLE operator_assets (
@@ -143,22 +126,5 @@ CREATE TABLE operator_assets (
 );
 CREATE INDEX idx_operator_assets_operator ON operator_assets (operator_addr);
 CREATE INDEX idx_operator_assets_asset_id ON operator_assets (asset_id);
-
-CREATE OR REPLACE FUNCTION get_operator_assets(
-    p_operator_addr TEXT,
-    p_asset_id TEXT
-) RETURNS TABLE (
-    total_amount NUMERIC,
-    pending_undelegation_amount NUMERIC,
-    total_share NUMERIC,
-    self_share NUMERIC,
-    other_share NUMERIC
-) AS $$
-BEGIN
-    RETURN QUERY SELECT total_amount, pending_undelegation_amount, total_share, self_share, other_share
-    FROM operator_assets
-    WHERE operator_addr = p_operator_addr AND asset_id = p_asset_id;
-END;
-$$ LANGUAGE plpgsql;
 
 -- TODO add indexes by quantity?

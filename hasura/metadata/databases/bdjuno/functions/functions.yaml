@@ -1,5 +1,6 @@
 - "!include public_get_epoch_number_by_height.yaml"
 - "!include public_get_epoch_number_by_time.yaml"
+- "!include public_get_operator_consensus_status.yaml"
 - "!include public_get_validator_uptime.yaml"
 - "!include public_messages_by_address.yaml"
 - "!include public_messages_by_type.yaml"
