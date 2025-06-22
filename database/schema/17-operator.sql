@@ -95,6 +95,10 @@ SELECT
     NULL::BIGINT AS last_active_height,
     NULL::BOOLEAN AS currently_in_set,
     NULL::TEXT AS last_active_cons_addr;
+-- given an operator acc address and chain id,
+-- it returns the first activation height, last active height,
+-- whether the operator is currently in the validator set,
+-- and the last active consensus address.
 CREATE OR REPLACE FUNCTION get_operator_consensus_status(
     in_operator_addr TEXT,
     in_chain_id TEXT
@@ -147,6 +151,40 @@ BEGIN
     GROUP BY in_operator_addr, in_chain_id;
 END;
 $$;
+
+CREATE OR REPLACE VIEW operator_from_consensus_address_structure AS
+SELECT
+    NULL::TEXT AS operator_addr,
+    NULL::JSONB AS meta_info;
+-- given a consensus address, chain id, and height,
+-- it returns the operator address and meta info.
+CREATE OR REPLACE FUNCTION get_operator_from_consensus_address(
+    in_cons_addr TEXT,
+    in_chain_id TEXT,
+    in_height BIGINT
+)
+RETURNS SETOF operator_from_consensus_address_structure -- Returns our tracked view's type
+LANGUAGE plpgsql
+STABLE
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        ckh.operator_addr,
+        o.meta_info
+    FROM consensus_keys_history ckh
+    JOIN operators o ON o.earnings_addr = ckh.operator_addr
+    WHERE ckh.cons_addr = in_cons_addr
+      AND ckh.chain_id = in_chain_id
+      AND ckh.first_activation_height IS NOT NULL
+      AND (
+          ckh.first_activation_height <= in_height
+          AND (ckh.last_active_height IS NULL OR in_height <= ckh.last_active_height)
+      )
+    LIMIT 1;
+END;
+$$;
+
 
 -- no correlation with NN-delegation.sql because the staker is not captured below.
 CREATE TABLE operator_usd_values (

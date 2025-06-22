@@ -1,0 +1,11 @@
+table:
+  name: operator_from_consensus_address_structure
+  schema: public
+select_permissions:
+- permission:
+    columns:
+    - operator_addr
+    - meta_info
+    filter: {}
+    limit: 10
+  role: anonymous
