@@ -28,5 +28,8 @@ func (m *Module) HandleBlock(
 		return fmt.Errorf("error updating oracle params: %w", err)
 	}
 
+	// TODO: track uptime for each validator
+	// 1.1.0 does not have such events; we must add later.
+
 	return nil
 }

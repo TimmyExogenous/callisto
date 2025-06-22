@@ -155,7 +155,9 @@ func (m *Module) handleSetConsKey(events []abci.Event, height int64) error {
 		if err != nil {
 			return fmt.Errorf("error while saving operator cons key: %s", err)
 		}
-		err = m.db.SaveConsensusKeyAddition(addr.Value, chainID.Value, consPubKey, height)
+		err = m.db.SaveConsensusKeyAddition(
+			addr.Value, chainID.Value, consPubKey, consAddress.Value, height,
+		)
 		if err != nil {
 			return fmt.Errorf("error while saving consensus key addition: %s", err)
 		}

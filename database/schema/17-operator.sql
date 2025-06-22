@@ -53,6 +53,7 @@ CREATE TABLE consensus_keys (
 CREATE TABLE consensus_keys_history (
     chain_id TEXT NOT NULL,
     pubkey TEXT NOT NULL,
+    cons_addr TEXT NOT NULL,
     operator_addr TEXT NOT NULL,
     -- the im_height at which the key was added by the operator
     addition_height BIGINT NOT NULL,

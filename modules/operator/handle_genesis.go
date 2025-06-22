@@ -43,8 +43,9 @@ func (m *Module) HandleGenesis(doc *tmtypes.GenesisDoc, appState map[string]json
 			if err := m.db.SaveOperatorConsKey(addr, detail.ChainID, consPubKey, consAddress); err != nil {
 				return fmt.Errorf("error while saving operator cons key: %s", err)
 			}
-			height := doc.InitialHeight
-			if err := m.db.SaveConsensusKeyAddition(addr, detail.ChainID, consPubKey, height); err != nil {
+			if err := m.db.SaveConsensusKeyAddition(
+				addr, detail.ChainID, consPubKey, consAddress, doc.InitialHeight,
+			); err != nil {
 				return fmt.Errorf("error while saving consensus key addition: %s", err)
 			}
 		}

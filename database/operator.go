@@ -70,13 +70,16 @@ SET cons_addr = EXCLUDED.cons_addr,
 // SaveConsensusKeyAddition records a new consensus key with its addition height into the database.
 // It inserts a new row only if the combination (chain_id, pubkey, addition_height) doesn't exist.
 // No update is done on conflict – insertion only.
-func (db *Db) SaveConsensusKeyAddition(operatorAddr, chainID, pubKey string, additionHeight int64) error {
+func (db *Db) SaveConsensusKeyAddition(
+	operatorAddr, chainID, pubKey, consAddr string,
+	additionHeight int64,
+) error {
 	stmt := `
 INSERT INTO consensus_keys_history (
-    operator_addr, chain_id, pubkey, addition_height
-) VALUES ($1, $2, $3, $4)
+    operator_addr, chain_id, pubkey, cons_addr, addition_height
+) VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (chain_id, pubkey, addition_height) DO NOTHING;`
-	_, err := db.SQL.Exec(stmt, operatorAddr, chainID, pubKey, additionHeight)
+	_, err := db.SQL.Exec(stmt, operatorAddr, chainID, pubKey, consAddr, additionHeight)
 	if err != nil {
 		return fmt.Errorf("failed to insert consensus key addition: %w", err)
 	}
@@ -275,7 +278,7 @@ WHERE chain_id = $2 AND pubkey = $3 AND addition_height = $4;`
 // SetConsensusKeyLastActive sets last_active_height for the latest instance of a consensus key.
 // It also sets first_activation_height if it has not already been set.
 func (db *Db) SetConsensusKeyLastActive(
-	chainID, pubkeyHex string,
+	chainID, pubKey string,
 	activeHeight int64,
 ) error {
 	// updates should be atomic
@@ -298,7 +301,7 @@ WHERE chain_id = $1 AND pubkey = $2
 ORDER BY addition_height DESC
 LIMIT 1;`
 
-	err = tx.QueryRow(query, chainID, pubkeyHex).Scan(&additionHeight, &lastActive, &firstActive)
+	err = tx.QueryRow(query, chainID, pubKey).Scan(&additionHeight, &lastActive, &firstActive)
 	if err != nil {
 		return fmt.Errorf("failed to find latest key entry: %w", err)
 	}
@@ -309,7 +312,7 @@ LIMIT 1;`
 	UPDATE consensus_keys_history
 	SET first_activation_height = $1
 	WHERE chain_id = $2 AND pubkey = $3 AND addition_height = $4;`
-		_, err = tx.Exec(stmt, activeHeight, chainID, pubkeyHex, additionHeight)
+		_, err = tx.Exec(stmt, activeHeight, chainID, pubKey, additionHeight)
 		if err != nil {
 			return fmt.Errorf("failed to set first_activation_height: %w", err)
 		}
@@ -321,7 +324,7 @@ LIMIT 1;`
 	UPDATE consensus_keys_history
 	SET last_active_height = $1
 	WHERE chain_id = $2 AND pubkey = $3 AND addition_height = $4;`
-		_, err = tx.Exec(stmt, activeHeight, chainID, pubkeyHex, additionHeight)
+		_, err = tx.Exec(stmt, activeHeight, chainID, pubKey, additionHeight)
 		if err != nil {
 			return fmt.Errorf("failed to set last_active_height: %w", err)
 		}
