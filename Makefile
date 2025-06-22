@@ -13,6 +13,9 @@ all: lint build test-unit
 ###                                Build flags                              ###
 ###############################################################################
 
+export CGO_ENABLED = 1
+export CGO_CFLAGS = -std=gnu11
+
 LD_FLAGS = -X github.com/forbole/juno/v5/cmd.Version=$(VERSION) \
 	-X github.com/forbole/juno/v5/cmd.Commit=$(COMMIT)
 BUILD_FLAGS :=  -ldflags '$(LD_FLAGS)'
