@@ -18,17 +18,17 @@ CREATE TABLE block_uptime (
 );
 
 -- View is required by Hasura to track the function
-CREATE OR REPLACE VIEW operator_uptime_structure AS
+CREATE OR REPLACE VIEW validator_uptime_structure AS
 SELECT
     NULL::TEXT AS operator_addr,
     NULL::BIGINT AS expected_blocks,
     NULL::BIGINT AS signed_blocks,
     NULL::NUMERIC AS uptime;
-CREATE OR REPLACE FUNCTION get_operator_uptime(
+CREATE OR REPLACE FUNCTION get_validator_uptime(
     in_operator_addr TEXT,
     in_chain_id TEXT
 )
-RETURNS SETOF operator_uptime_structure
+RETURNS SETOF validator_uptime_structure
 LANGUAGE plpgsql
 STABLE
 AS $$
