@@ -1,13 +1,10 @@
 table:
-  name: im_asset_delegations
+  name: epoch_number_structure
   schema: public
 select_permissions:
 - permission:
     columns:
-    - staker_id
-    - delegated
-    - pending_undelegation
-    - lifetime_slashed
+    - epoch_number
     filter: {}
     limit: 10
   role: anonymous

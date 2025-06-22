@@ -7,7 +7,6 @@ object_relationships:
     foreign_key_constraint_on: vesting_account_id
 select_permissions:
 - permission:
-    allow_aggregations: false
     columns:
     - period_order
     - length

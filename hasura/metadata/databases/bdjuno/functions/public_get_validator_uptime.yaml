@@ -1,14 +1,3 @@
 function:
   name: get_validator_uptime
   schema: public
-select_permissions:
-- permission:
-    allow_aggregations: false
-    columns:
-    - operator_addr
-    - expected_blocks
-    - signed_blocks
-    - uptime
-    filter: {}
-    limit: 10
-  role: anonymous

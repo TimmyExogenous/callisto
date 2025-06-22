@@ -12,6 +12,27 @@ object_relationships:
         name: proposal_validator_status_snapshot
         schema: public
 array_relationships:
+- name: block_uptimes
+  using:
+    foreign_key_constraint_on:
+      column: consensus_address
+      table:
+        name: block_uptime
+        schema: public
+- name: blocks
+  using:
+    foreign_key_constraint_on:
+      column: proposer_address
+      table:
+        name: block
+        schema: public
+- name: double_sign_votes
+  using:
+    foreign_key_constraint_on:
+      column: validator_address
+      table:
+        name: double_sign_vote
+        schema: public
 - name: fk_cons_key_current
   using:
     manual_configuration:
@@ -29,20 +50,6 @@ array_relationships:
       insertion_order: null
       remote_table:
         name: consensus_keys
-        schema: public
-- name: blocks
-  using:
-    foreign_key_constraint_on:
-      column: proposer_address
-      table:
-        name: block
-        schema: public
-- name: double_sign_votes
-  using:
-    foreign_key_constraint_on:
-      column: validator_address
-      table:
-        name: double_sign_vote
         schema: public
 - name: pre_commits
   using:
@@ -76,7 +83,6 @@ array_relationships:
         schema: public
 select_permissions:
 - permission:
-    allow_aggregations: false
     columns:
     - consensus_address
     - consensus_pubkey

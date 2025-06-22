@@ -41,6 +41,13 @@ array_relationships:
       table:
         name: oracle_asset_id_to_token_id
         schema: public
+- name: staker_asset_events
+  using:
+    foreign_key_constraint_on:
+      column: asset_id
+      table:
+        name: staker_asset_events
+        schema: public
 - name: staker_assets
   using:
     foreign_key_constraint_on:
@@ -57,7 +64,6 @@ array_relationships:
         schema: public
 select_permissions:
 - permission:
-    allow_aggregations: false
     columns:
     - asset_id
     - name

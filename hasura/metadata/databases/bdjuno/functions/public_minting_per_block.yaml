@@ -1,0 +1,3 @@
+function:
+  name: minting_per_block
+  schema: public

@@ -10,7 +10,6 @@ object_relationships:
     foreign_key_constraint_on: token_id
 select_permissions:
 - permission:
-    allow_aggregations: false
     columns:
     - token_id
     - asset_id

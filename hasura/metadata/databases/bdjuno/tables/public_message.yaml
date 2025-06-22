@@ -26,7 +26,6 @@ object_relationships:
         schema: public
 select_permissions:
 - permission:
-    allow_aggregations: false
     columns:
     - transaction_hash
     - index

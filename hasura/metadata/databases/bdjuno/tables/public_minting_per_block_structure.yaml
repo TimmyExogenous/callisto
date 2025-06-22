@@ -1,13 +1,11 @@
 table:
-  name: im_asset_delegations
+  name: minting_per_block_structure
   schema: public
 select_permissions:
 - permission:
     columns:
-    - staker_id
-    - delegated
-    - pending_undelegation
-    - lifetime_slashed
+    - block_height
+    - quantity_minted
     filter: {}
     limit: 10
   role: anonymous

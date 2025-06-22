@@ -1,21 +1,24 @@
 table:
-  name: delegation_states
+  name: staker_asset_events
   schema: public
 object_relationships:
 - name: assets_token
   using:
     foreign_key_constraint_on: asset_id
-- name: operator
-  using:
-    foreign_key_constraint_on: operator_addr
 select_permissions:
 - permission:
     columns:
+    - event_id
     - staker_id
     - asset_id
-    - operator_addr
-    - undelegatable_share
-    - wait_undelegation_amount
+    - event_type
+    - amount
+    - tx_hash
+    - block_height
+    - block_time
+    - source
+    - validator_address
+    - metadata
     filter: {}
     limit: 10
   role: anonymous

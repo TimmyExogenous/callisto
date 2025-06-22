@@ -7,7 +7,6 @@ object_relationships:
     foreign_key_constraint_on: epoch_id
 select_permissions:
 - permission:
-    allow_aggregations: false
     columns:
     - block_height
     - quantity_minted

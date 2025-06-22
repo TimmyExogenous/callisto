@@ -1,0 +1,3 @@
+function:
+  name: total_minted
+  schema: public

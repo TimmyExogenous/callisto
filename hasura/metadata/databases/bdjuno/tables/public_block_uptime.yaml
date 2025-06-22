@@ -1,16 +1,16 @@
 table:
-  name: consensus_addrs_to_prune
+  name: block_uptime
   schema: public
 object_relationships:
 - name: validator
   using:
-    foreign_key_constraint_on: consensus_addr
+    foreign_key_constraint_on: consensus_address
 select_permissions:
 - permission:
     columns:
-    - epoch_number
-    - consensus_addr
-    - completion_height
+    - height
+    - consensus_address
+    - signed
     filter: {}
     limit: 10
   role: anonymous

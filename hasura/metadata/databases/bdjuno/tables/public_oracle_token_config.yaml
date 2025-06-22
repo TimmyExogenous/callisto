@@ -18,7 +18,6 @@ array_relationships:
         schema: public
 select_permissions:
 - permission:
-    allow_aggregations: false
     columns:
     - next_round_id
     - token_id
