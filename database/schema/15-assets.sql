@@ -63,6 +63,52 @@ CREATE TABLE staker_assets (
 CREATE INDEX idx_deposits_staker_id ON staker_assets (staker_id);
 CREATE INDEX idx_deposits_asset_id ON staker_assets (asset_id);
 
+-- history of staker assets
+CREATE TABLE staker_asset_events (
+    -- generated
+    event_id           BIGSERIAL PRIMARY KEY,
+    -- identifier of the staker
+    staker_id          TEXT NOT NULL,
+    -- identifier of the asset
+    asset_id           TEXT NOT NULL,
+    -- a staker can either
+    -- deposit
+    -- withdraw
+    -- delegate
+    -- undelegate
+    -- get its undelegation released
+    -- get slashed
+    event_type         TEXT NOT NULL CHECK (
+        event_type IN (
+            'deposit',
+            'withdraw',
+            'delegate',
+            'undelegate_begin',
+            'undelegate_complete',
+            'slashed'
+        )
+    ),
+    -- affected amount
+    amount             NUMERIC NOT NULL,
+    -- tx hash of the event, optional
+    tx_hash            TEXT,
+    -- block height of the event
+    block_height       BIGINT NOT NULL,
+    -- timestamp of the event
+    block_time         TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+    -- cause of the event
+    source             TEXT NOT NULL CHECK (
+        source IN ('genesis', 'tx', 'system')
+    ),
+    -- optional validator address: relevant for delegate, undelegate, slashed
+    validator_address  TEXT,
+    -- optional metadata
+    metadata           JSONB DEFAULT '{}'::jsonb,
+    -- foreign key to the asset
+    CONSTRAINT fk_asset FOREIGN KEY (asset_id) REFERENCES assets_tokens (asset_id)
+    -- no foreign key for the staker, since it is not primary key in staker_assets
+);
+
 CREATE OR REPLACE FUNCTION get_latest_staker_assets(
     p_staker_id TEXT,
     p_asset_id TEXT

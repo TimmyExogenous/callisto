@@ -20,20 +20,39 @@ CREATE TABLE immint_history (
 CREATE INDEX idx_immint_epoch_number ON immint_history (epoch_number);
 CREATE INDEX idx_immint_block_height ON immint_history (block_height);
 
+CREATE OR REPLACE VIEW total_minted_structure AS
+SELECT NULL::NUMERIC AS total;
 CREATE OR REPLACE FUNCTION total_minted()
-RETURNS NUMERIC AS $$
-BEGIN
-    RETURN (SELECT COALESCE(SUM(quantity_minted), 0) FROM immint_history);
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION minting_per_block()
-RETURNS TABLE(block_height BIGINT, quantity_minted NUMERIC) AS $$
+RETURNS SETOF total_minted_structure
+LANGUAGE plpgsql
+STABLE
+AS $$
 BEGIN
     RETURN QUERY
-    SELECT block_height, quantity_minted
-    FROM immint_history
-    ORDER BY block_height;
+    SELECT
+        COALESCE(SUM(quantity_minted), 0) AS total -- Alias matches the view's column
+    FROM
+        immint_history;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
+CREATE OR REPLACE VIEW minting_per_block_structure AS
+SELECT
+    NULL::BIGINT AS block_height,
+    NULL::NUMERIC AS quantity_minted;
+CREATE OR REPLACE FUNCTION minting_per_block()
+RETURNS SETOF minting_per_block_structure
+LANGUAGE plpgsql
+STABLE
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        ih.block_height,
+        ih.quantity_minted
+    FROM
+        immint_history ih
+    ORDER BY
+        ih.block_height DESC;
+END;
+$$;

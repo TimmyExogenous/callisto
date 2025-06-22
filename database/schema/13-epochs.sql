@@ -18,24 +18,46 @@ CREATE TABLE epoch_states (
 CREATE INDEX idx_epoch_identifier_time ON epoch_states (identifier, current_epoch_start_time);
 CREATE INDEX idx_epoch_identifier_height ON epoch_states (identifier, current_epoch_start_height);
 
--- This function is used to get the epoch number by height
-CREATE OR REPLACE FUNCTION get_epoch_number_by_height(identifier TEXT, block_height BIGINT)
-RETURNS BIGINT AS $$
-    SELECT current_epoch
-    FROM epoch_states
-    WHERE identifier = $1
-      AND current_epoch_start_height <= $2
-    ORDER BY current_epoch_start_height DESC
-    LIMIT 1;
-$$ LANGUAGE sql STABLE;
+-- The view is required because of Hasura.
+CREATE OR REPLACE VIEW epoch_number_structure AS
+SELECT NULL::BIGINT AS epoch_number;
 
--- This function is used to get the epoch number by time
-CREATE OR REPLACE FUNCTION get_epoch_number_by_time(identifier TEXT, block_time TIMESTAMP)
-RETURNS BIGINT AS $$
-    SELECT current_epoch
-    FROM epoch_states
-    WHERE identifier = $1
-      AND current_epoch_start_time <= $2
-    ORDER BY current_epoch_start_time DESC
+-- epoch by height
+CREATE OR REPLACE FUNCTION get_epoch_number_by_height(
+    in_identifier TEXT,
+    in_block_height BIGINT
+)
+RETURNS SETOF epoch_number_structure
+LANGUAGE plpgsql
+STABLE
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT es.current_epoch
+    FROM epoch_states es
+    WHERE es.identifier = in_identifier
+      AND es.current_epoch_start_height <= in_block_height
+    ORDER BY es.current_epoch_start_height DESC
     LIMIT 1;
-$$ LANGUAGE sql STABLE;
+END;
+$$;
+
+-- epoch by time, though not exactly used.
+CREATE OR REPLACE FUNCTION get_epoch_number_by_time(
+    in_identifier TEXT,
+    in_block_time TIMESTAMP
+)
+RETURNS SETOF epoch_number_structure
+LANGUAGE plpgsql
+STABLE
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT es.current_epoch AS epoch_number
+    FROM epoch_states es
+    WHERE es.identifier = in_identifier
+      AND es.current_epoch_start_time <= in_block_time
+    ORDER BY es.current_epoch_start_time DESC
+    LIMIT 1;
+END;
+$$;
