@@ -1,40 +1,66 @@
 name: Release
 
 on:
+  merge_group:
   push:
     tags:
-      - 'v*'
+      - "v*.*.*"
+  pull_request:
+    branches:
+      - develop
+      - main
+      - master
+      - chains/imuachain
 
 jobs:
   release:
-    name: Build and Release Go Binary
     runs-on: ubuntu-latest
 
-    strategy:
-      matrix:
-        goos: [linux, darwin, windows]
-        goarch: [amd64, arm64]
-
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: true
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.21.12'
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
 
-    - name: Build
-      run: |
-        mkdir -p dist
-        GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} make build
-        mv build/callisto dist/callisto-${{ matrix.goos }}-${{ matrix.goarch }}
+      - name: Set up .release-env
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" > .release-env
 
-    - name: Upload binaries
-      uses: softprops/action-gh-release@v1
-      with:
-        files: dist/*
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run GoReleaser (dry run for PRs)
+        if: github.event_name == 'pull_request'
+        run: |
+          docker run \
+            --rm \
+            --privileged \
+            -e CGO_ENABLED=1 \
+            -e CGO_CFLAGS=-std=gnu11 \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v ${{ github.workspace }}:/go/src/github.com/imua-xyz/callisto \
+            -v $HOME/go/pkg:/go/pkg \
+            -w /go/src/github.com/imua-xyz/callisto \
+            ghcr.io/goreleaser/goreleaser-cross:v1.22-v2.0.0 \
+            release --clean --skip validate,publish --snapshot
+
+      - name: Run GoReleaser (real release on tag)
+        if: github.event_name != 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          docker run \
+            --rm \
+            --privileged \
+            -e CGO_ENABLED=1 \
+            -e CGO_CFLAGS=-std=gnu11 \
+            --env-file .release-env \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v ${{ github.workspace }}:/go/src/github.com/imua-xyz/callisto \
+            -w /go/src/github.com/imua-xyz/callisto \
+            ghcr.io/goreleaser/goreleaser-cross:v1.22-v2.0.0 \
+            release --clean --skip validate
 
   docker:
     name: Build and Push Docker Image
