@@ -10,6 +10,7 @@ import (
 	"github.com/forbole/callisto/v4/modules/immint"
 	"github.com/forbole/callisto/v4/modules/operator"
 	"github.com/forbole/callisto/v4/modules/oracle"
+	"github.com/forbole/callisto/v4/modules/tokenomics"
 	"github.com/forbole/callisto/v4/modules/types"
 
 	"github.com/forbole/juno/v5/modules/pruning"
@@ -172,5 +173,6 @@ func (r *Registrar) BuildModules(ctx registrar.Context) jmodules.Modules {
 		// imslashTypes.ModuleName,
 		// distrtypes.ModuleName,
 		// crisistypes.ModuleName,
+		tokenomics.NewModule(db),
 	}
 }
