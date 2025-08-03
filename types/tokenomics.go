@@ -11,7 +11,7 @@ type TokenomicsParams struct {
 	LiquidityIncentiveAirdropDuration *int64
 	LiquidityIncentiveAirdropInterval *int64
 	GenesisValidatorRewardRatio       *string
-	Height                            int64
+	CreatedAt                         *time.Time
 }
 
 // GenesisPoolAirdropRound represents a single round of genesis pool airdrop distribution.

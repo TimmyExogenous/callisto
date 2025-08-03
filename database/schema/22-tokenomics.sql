@@ -1,16 +1,16 @@
 CREATE TABLE tokenomics_params
 (
-    one_row_id                           BOOLEAN NOT NULL DEFAULT TRUE PRIMARY KEY,
+    one_row_id                           BOOLEAN   NOT NULL DEFAULT TRUE PRIMARY KEY,
     -- default genesis supply value is from the tokenomics documentation
-    genesis_supply                       NUMERIC NOT NULL DEFAULT 314159265,
+    genesis_supply                       NUMERIC   NOT NULL DEFAULT 314159265,
 
     -- default ratio is from the tokenomics documentation
-    genesis_pool_ratio                   NUMERIC NOT NULL DEFAULT 0.0300,
+    genesis_pool_ratio                   NUMERIC   NOT NULL DEFAULT 0.0300,
     -- The genesis pool airdrop will last for 90 days after TGE.
-    genesis_pool_airdrop_duration        NUMERIC NOT NULL DEFAULT 90,
+    genesis_pool_airdrop_duration        NUMERIC   NOT NULL DEFAULT 90,
     -- We calculate and execute an airdrop per week (every 7 days).
     -- We can adjust the default value if needed.
-    genesis_pool_airdrop_interval        NUMERIC NOT NULL DEFAULT 7,
+    genesis_pool_airdrop_interval        NUMERIC   NOT NULL DEFAULT 7,
 
     -- default ratios is from the tokenomics documentation
     -- it's similar to the `annual_inflation` in the parameter of immint module.
@@ -20,15 +20,15 @@ CREATE TABLE tokenomics_params
     -- the list will be used.
     liquidity_incentive_ratios           NUMERIC[] NOT NULL DEFAULT ARRAY[0.0200, 0.0100, 0.0050, 0.0025, 0.0013],
     -- The liquidity incentive airdrop will last for ten years(ignore the leap year) after TGE.
-    liquidity_incentive_airdrop_duration NUMERIC NOT NULL DEFAULT 3650,
+    liquidity_incentive_airdrop_duration NUMERIC   NOT NULL DEFAULT 3650,
     -- We calculate and execute an airdrop each quarter (every 90 days).
     -- We can adjust the default value if needed.
-    liquidity_incentive_airdrop_interval NUMERIC NOT NULL DEFAULT 90,
+    liquidity_incentive_airdrop_interval NUMERIC   NOT NULL DEFAULT 90,
 
     -- default ratio is from the tokenomics documentation
-    genesis_validator_reward_ratio       NUMERIC NOT NULL DEFAULT 0.0200,
-    -- int64 ctx.BlockHeight() fits in BIGINT, it indicates the time when this table was created or last updated.
-    height                               BIGINT  NOT NULL,
+    genesis_validator_reward_ratio       NUMERIC   NOT NULL DEFAULT 0.0200,
+    -- Record creation timestamp
+    created_at                           TIMESTAMP NOT NULL DEFAULT now(),
 
     CHECK (one_row_id = TRUE),
     CHECK (genesis_pool_ratio < 1),

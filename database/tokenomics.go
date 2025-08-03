@@ -21,7 +21,7 @@ INSERT INTO tokenomics_params (
     liquidity_incentive_airdrop_duration,
     liquidity_incentive_airdrop_interval,
     genesis_validator_reward_ratio,
-    height
+    created_at
 ) 
 VALUES (
     TRUE,  -- one_row_id, always true
@@ -33,7 +33,7 @@ VALUES (
     COALESCE($6, DEFAULT),
     COALESCE($7, DEFAULT),
     COALESCE($8, DEFAULT),
-    $9
+ 	NOW(),
 )
 ON CONFLICT (one_row_id) DO UPDATE
 	SET
@@ -44,8 +44,7 @@ ON CONFLICT (one_row_id) DO UPDATE
         liquidity_incentive_airdrop_duration = COALESCE(EXCLUDED.liquidity_incentive_airdrop_duration, tokenomics_params.liquidity_incentive_airdrop_duration),
 		liquidity_incentive_airdrop_interval = COALESCE(EXCLUDED.liquidity_incentive_airdrop_interval, tokenomics_params.liquidity_incentive_airdrop_interval),
 		genesis_validator_reward_ratio = COALESCE(EXCLUDED.genesis_validator_reward_ratio, tokenomics_params.genesis_validator_reward_ratio),
-		height = EXCLUDED.height
-WHERE tokenomics_params.height <= EXCLUDED.height;`
+		created_at = NOW()`
 
 	_, err := db.SQL.Exec(stmt,
 		params.GenesisSupply,
@@ -56,7 +55,6 @@ WHERE tokenomics_params.height <= EXCLUDED.height;`
 		params.LiquidityIncentiveAirdropDuration,
 		params.LiquidityIncentiveAirdropInterval,
 		params.GenesisValidatorRewardRatio,
-		params.Height,
 	)
 
 	if err != nil {
@@ -77,7 +75,7 @@ SELECT
     liquidity_incentive_airdrop_duration,
     liquidity_incentive_airdrop_interval,
     genesis_validator_reward_ratio,
-    height
+    created_at
 FROM tokenomics_params
 WHERE one_row_id = TRUE
 LIMIT 1;`
@@ -93,7 +91,7 @@ LIMIT 1;`
 		&params.LiquidityIncentiveAirdropDuration,
 		&params.LiquidityIncentiveAirdropInterval,
 		&params.GenesisValidatorRewardRatio,
-		&params.Height,
+		&params.CreatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

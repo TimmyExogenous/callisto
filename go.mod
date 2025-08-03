@@ -13,7 +13,7 @@ require (
 	github.com/forbole/juno/v5 v5.2.1-0.20240201075935-851426ddd905
 	github.com/go-co-op/gocron v1.37.0
 	github.com/golangci/golangci-lint v1.55.2
-	github.com/imua-xyz/imuachain v1.1.0
+	github.com/imua-xyz/imuachain v1.1.3
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/lib/pq v1.10.9
 	github.com/pelletier/go-toml v1.9.5
@@ -395,5 +395,6 @@ replace (
 	github.com/evmos/evmos/v16 => github.com/imua-xyz/evmos/v16 v16.0.3-0.20250428082709-46118f23fed5
 	github.com/syndtr/goleveldb => github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 	golang.org/x/exp => golang.org/x/exp v0.0.0-20230515195305-f3d0a9c9a5cc
+	github.com/imua-xyz/imuachain => ../imuachain
 // github.com/forbole/juno/v5 => /home/user/Documents/Work/Exocore/juno
 )
