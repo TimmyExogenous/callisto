@@ -33,6 +33,15 @@ pruning:
 dogfood:
   chain_id_without_revision: "imuachaintestnet_233"
 
+bootstrap:
+  eth_http: ""
+  eth_websocket: ""
+  btc_rpc: ""
+  xrp_rpc: ""
+  bootstrap_addr: ""
+  update_interval: 5
+  eth_lz_chain_id: 40217
+
 node:
   type: remote
   config:

@@ -4,6 +4,7 @@ import (
 	"github.com/forbole/callisto/v4/modules/actions"
 	"github.com/forbole/callisto/v4/modules/assets"
 	"github.com/forbole/callisto/v4/modules/avs"
+	"github.com/forbole/callisto/v4/modules/bootstrap"
 	"github.com/forbole/callisto/v4/modules/delegation"
 	"github.com/forbole/callisto/v4/modules/dogfood"
 	"github.com/forbole/callisto/v4/modules/epochs"
@@ -157,6 +158,8 @@ func (r *Registrar) BuildModules(ctx registrar.Context) jmodules.Modules {
 		oracle.NewModule(sources.OracleSource, cdc, db),
 		// stakingtypes.ModuleName,
 		slashingModule,
+		// bootstrap module
+		bootstrap.NewModule(ctx.JunoConfig, db),
 		// evidencetypes.ModuleName,
 		// govtypes.ModuleName,
 		// erc20types.ModuleName,
