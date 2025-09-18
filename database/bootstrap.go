@@ -46,23 +46,23 @@ SET validator_im_addr   = EXCLUDED.validator_im_addr,
 }
 
 // UpdateCommissionRate updates the commission rate for a bootstrap validator identified
-// by validatorEthAddr. It also updates the updated_at timestamp to the current time.
-func (db *Db) UpdateCommissionRate(validatorEthAddr string, newRate string) error {
+// by validatorAddr. It also updates the updated_at timestamp to the current time.
+func (db *Db) UpdateCommissionRate(validatorAddr string, newRate string) error {
 	stmt := `
 UPDATE bootstrap_validator
 SET commission_rate     = $1,
     updated_at          = $2
-WHERE validator_eth_addr = $3;
+WHERE validator_im_addr = $3;
 `
 
 	_, err := db.SQL.Exec(
 		stmt,
 		newRate,
 		time.Now(),
-		validatorEthAddr,
+		validatorAddr,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to update commission rate for %s: %w", validatorEthAddr, err)
+		return fmt.Errorf("failed to update commission rate for %s: %w", validatorAddr, err)
 	}
 	return nil
 }
@@ -142,6 +142,24 @@ SET name                 = EXCLUDED.name,
 	return nil
 }
 
+func (db *Db) UpdateBootstrapTokenDepositAmount(assetID string, amount string) error {
+	stmt := `
+UPDATE bootstrap_tokens
+SET staking_total_amount = $1,
+    updated_at = $2
+WHERE asset_id = $3;`
+
+	_, err := db.SQL.Exec(stmt,
+		amount,
+		time.Now(),
+		assetID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update staking_total_amount for asset_id=%s: %w", assetID, err)
+	}
+	return nil
+}
+
 func (db *Db) SaveBootstrapStakerAsset(a *types.BootstrapStakerAsset) error {
 	stmt := `
 INSERT INTO bootstrap_staker_assets (
@@ -165,6 +183,22 @@ SET deposited    = EXCLUDED.deposited,
 		return fmt.Errorf("failed to save bootstrap staker asset: %w", err)
 	}
 	return nil
+}
+
+func (db *Db) BootstrapStakerAssetExists(stakerID, assetID string) (bool, error) {
+	stmt := `
+SELECT EXISTS(
+    SELECT 1 
+    FROM bootstrap_staker_assets 
+    WHERE staker_id = $1 AND asset_id = $2
+);`
+
+	var exists bool
+	err := db.SQL.QueryRow(stmt, stakerID, assetID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("failed to check bootstrap staker asset existence: %w", err)
+	}
+	return exists, nil
 }
 
 // DepositBootstrapStakerAsset increases the deposited and withdrawable amount
@@ -254,6 +288,22 @@ SET delegated  = EXCLUDED.delegated,
 	return nil
 }
 
+func (db *Db) BootstrapDelegationExists(stakerID, assetID, operatorAddr string) (bool, error) {
+	stmt := `
+SELECT EXISTS(
+    SELECT 1
+    FROM bootstrap_delegation_states
+    WHERE staker_id = $1 AND asset_id = $2 AND operator_addr = $3
+);`
+
+	var exists bool
+	err := db.SQL.QueryRow(stmt, stakerID, assetID, operatorAddr).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("failed to check bootstrap delegation state existence: %w", err)
+	}
+	return exists, nil
+}
+
 func (db *Db) SaveBootstrapOperatorAsset(o *types.BootstrapOperatorAsset) error {
 	stmt := `
 INSERT INTO bootstrap_operator_assets (
@@ -277,4 +327,20 @@ SET total_amount = EXCLUDED.total_amount,
 		return fmt.Errorf("failed to save bootstrap operator asset: %w", err)
 	}
 	return nil
+}
+
+func (db *Db) OperatorAssetExists(operatorAddr string, assetID string) (bool, error) {
+	stmt := `
+SELECT EXISTS (
+    SELECT 1
+    FROM bootstrap_operator_assets
+    WHERE operator_addr = $1 AND asset_id = $2
+);`
+
+	var exists bool
+	err := db.SQL.QueryRow(stmt, operatorAddr, assetID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("failed to check bootstrap operator asset existence: %w", err)
+	}
+	return exists, nil
 }

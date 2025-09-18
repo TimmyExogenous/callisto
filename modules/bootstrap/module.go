@@ -9,7 +9,6 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	callistodb "github.com/forbole/callisto/v4/database"
 	"github.com/forbole/callisto/v4/modules/bootstrap/bootstrap_binding"
-	"github.com/forbole/callisto/v4/modules/bootstrap/storage_binding"
 	"github.com/forbole/juno/v5/types/config"
 
 	"github.com/forbole/juno/v5/modules"
@@ -30,9 +29,7 @@ type Module struct {
 	// directly using the http package.
 	ctx               context.Context
 	bootstrapSession  *bootstrap_binding.BootstrapCallerSession
-	storageSession    *storage_binding.BootstrapStorageCallerSession
 	bootstrapFilterer *bootstrap_binding.BootstrapFilterer
-	storageFilterer   *storage_binding.BootstrapStorageFilterer
 }
 
 // NewModule builds a new Module instance
@@ -76,23 +73,11 @@ func NewModule(
 		Contract: bootstrapCaller,
 		CallOpts: bind.CallOpts{Context: ctx},
 	}
-	storageCaller, err := storage_binding.NewBootstrapStorageCaller(bootstrapAddr, ethHttpClient)
-	if err != nil {
-		panic(fmt.Errorf("failed to new bootstrap storage caller,err:%s", err))
-	}
-	storageSession := &storage_binding.BootstrapStorageCallerSession{
-		Contract: storageCaller,
-		CallOpts: bind.CallOpts{Context: ctx},
-	}
 
 	// create the filterer to subscribe all related events
 	bootstrapFilterer, err := bootstrap_binding.NewBootstrapFilterer(bootstrapAddr, ethWSClient)
 	if err != nil {
 		panic(fmt.Errorf("failed to new bootstrap filterer,err:%s", err))
-	}
-	storageFilterer, err := storage_binding.NewBootstrapStorageFilterer(bootstrapAddr, ethWSClient)
-	if err != nil {
-		panic(fmt.Errorf("failed to new bootstrap storage filterer,err:%s", err))
 	}
 
 	return &Module{
@@ -103,9 +88,7 @@ func NewModule(
 		BootstrapAddr:     bootstrapAddr,
 		ctx:               ctx,
 		bootstrapSession:  bootstrapSession,
-		storageSession:    storageSession,
 		bootstrapFilterer: bootstrapFilterer,
-		storageFilterer:   storageFilterer,
 	}
 }
 

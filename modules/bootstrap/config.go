@@ -10,10 +10,12 @@ type Config struct {
 	BTCRPC        string `yaml:"btc_rpc"`
 	XRPRPC        string `yaml:"xrp_rpc"`
 	BootstrapAddr string `yaml:"bootstrap_addr"`
-	// UpdateInterval specifies the interval in minutes at which the
+	// The following UpdateIntervals specify the interval in minutes at which the
 	// bootstrap states are automatically refreshed.
-	UpdateInterval int64  `yaml:"update_interval"`
-	ETHLZChainID   uint64 `yaml:"eth_lz_chain_id"`
+	ETHUpdateInterval int64  `yaml:"eth_update_interval"`
+	BTCUpdateInterval int64  `yaml:"btc_update_interval"`
+	XRPUpdateInterval int64  `yaml:"xrp_update_interval"`
+	ETHLZChainID      uint64 `yaml:"eth_lz_chain_id"`
 }
 
 // NewConfig allows to build a new Config instance
