@@ -3,6 +3,8 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"sync"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -33,6 +35,11 @@ type Module struct {
 	storageSession    *storage_binding.BootstrapStorageCallerSession
 	bootstrapFilterer *bootstrap_binding.BootstrapFilterer
 	storageFilterer   *storage_binding.BootstrapStorageFilterer
+	// Address mappings for 1-1 binding validation (separate mutexes for true parallelism)
+	btcAddressMappings map[string]string // bitcoin -> imuachain
+	xrpAddressMappings map[string]string // xrp -> imuachain
+	btcMappingMutex    sync.RWMutex      // Separate mutex for BTC mappings
+	xrpMappingMutex    sync.RWMutex      // Separate mutex for XRP mappings
 }
 
 // NewModule builds a new Module instance
@@ -95,21 +102,60 @@ func NewModule(
 		panic(fmt.Errorf("failed to new bootstrap storage filterer,err:%s", err))
 	}
 
-	return &Module{
-		database:          database,
-		EthHttpClient:     ethHttpClient,
-		EthWSClient:       ethWSClient,
-		Config:            *bootstrapCfg,
-		BootstrapAddr:     bootstrapAddr,
-		ctx:               ctx,
-		bootstrapSession:  bootstrapSession,
-		storageSession:    storageSession,
-		bootstrapFilterer: bootstrapFilterer,
-		storageFilterer:   storageFilterer,
+	module := &Module{
+		database:           database,
+		EthHttpClient:      ethHttpClient,
+		EthWSClient:        ethWSClient,
+		Config:             *bootstrapCfg,
+		BootstrapAddr:      bootstrapAddr,
+		ctx:                ctx,
+		bootstrapSession:   bootstrapSession,
+		storageSession:     storageSession,
+		bootstrapFilterer:  bootstrapFilterer,
+		storageFilterer:    storageFilterer,
+		btcAddressMappings: make(map[string]string),
+		xrpAddressMappings: make(map[string]string),
+		// Note: mutexes are zero-valued, no need to initialize explicitly
 	}
+
+	// Initialize address bindings from database
+	if err := module.loadExistingBindings(); err != nil {
+		panic(fmt.Errorf("failed to load existing address bindings: %w", err))
+	}
+
+	return module
 }
 
 // Name implements modules.Module
 func (m *Module) Name() string {
 	return "bootstrap"
+}
+
+// loadExistingBindings loads existing address bindings from database into memory
+func (m *Module) loadExistingBindings() error {
+	// Load BTC bindings
+	btcBindings, err := m.database.GetAddressBindings("BTC")
+	if err != nil {
+		return fmt.Errorf("failed to load BTC address bindings: %w", err)
+	}
+
+	m.btcMappingMutex.Lock()
+	for _, binding := range btcBindings {
+		m.btcAddressMappings[binding.SourceAddr] = binding.TargetAddr
+	}
+	m.btcMappingMutex.Unlock()
+
+	// Load XRP bindings
+	xrpBindings, err := m.database.GetAddressBindings("XRP")
+	if err != nil {
+		return fmt.Errorf("failed to load XRP address bindings: %w", err)
+	}
+
+	m.xrpMappingMutex.Lock()
+	for _, binding := range xrpBindings {
+		m.xrpAddressMappings[binding.SourceAddr] = binding.TargetAddr
+	}
+	m.xrpMappingMutex.Unlock()
+
+	return nil
 }

@@ -82,3 +82,42 @@ CREATE TABLE bootstrap_operator_assets
 );
 CREATE INDEX idx_operator_assets_operator ON bootstrap_operator_assets (operator_addr);
 CREATE INDEX idx_operator_assets_asset_id ON bootstrap_operator_assets (asset_id);
+
+-- Incremental scanning support tables
+CREATE TABLE bootstrap_scan_state
+(
+    chain_type     TEXT PRIMARY KEY, -- 'BTC' or 'XRP'
+    last_height    BIGINT NOT NULL,  -- BTC: block height, XRP: ledger index
+    last_hash      TEXT,             -- Last processed block/ledger hash (for reorg detection)
+    safe_height    BIGINT NOT NULL,  -- Safe confirmed height (considering reorgs)
+    updated_at     TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+    created_at     TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE bootstrap_processed_transactions
+(
+    chain_type      TEXT NOT NULL,   -- 'BTC' or 'XRP'
+    tx_hash         TEXT NOT NULL,   -- Transaction hash
+    block_height    BIGINT NOT NULL, -- Block/ledger height
+    processed_at    TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (chain_type, tx_hash)
+);
+
+CREATE INDEX idx_processed_tx_height ON bootstrap_processed_transactions (chain_type, block_height);
+CREATE INDEX idx_processed_tx_processed_at ON bootstrap_processed_transactions (processed_at);
+
+-- Address binding tables for 1:1 mapping between external chains and Imuachain addresses
+CREATE TABLE bootstrap_address_bindings
+(
+    chain_type    TEXT NOT NULL, -- 'BTC' or 'XRP'
+    source_addr   TEXT NOT NULL, -- BTC/XRP address (normalized: lowercase, trimmed)
+    target_addr   TEXT NOT NULL, -- Imuachain address (normalized: lowercase, trimmed)
+    created_at    TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (chain_type, source_addr),
+    -- Ensure 1:1 mapping - each target address can only bind to one source address per chain
+    CONSTRAINT uq_target_per_chain UNIQUE (chain_type, target_addr)
+);
+
+CREATE INDEX idx_address_bindings_target ON bootstrap_address_bindings (target_addr);
+CREATE INDEX idx_address_bindings_created ON bootstrap_address_bindings (created_at);
