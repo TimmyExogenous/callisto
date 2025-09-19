@@ -529,3 +529,47 @@ func (db *Db) DeleteAddressBinding(chainType, sourceAddr string) error {
 
 	return nil
 }
+
+// Transaction support methods
+
+// WithTransaction executes a function within a database transaction
+func (db *Db) WithTransaction(fn func(tx *sql.Tx) error) error {
+	tx, err := db.SQL.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+			panic(r)
+		}
+	}()
+
+	if err := fn(tx); err != nil {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+			return fmt.Errorf("failed to rollback transaction after error %v: %w", err, rollbackErr)
+		}
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+// MarkTransactionProcessedInTx marks a transaction as processed within an existing transaction
+func (db *Db) MarkTransactionProcessedInTx(tx *sql.Tx, chainType, txHash string, blockHeight int64) error {
+	stmt := `
+INSERT INTO bootstrap_processed_transactions (chain_type, tx_hash, block_height, processed_at)
+VALUES ($1, $2, $3, NOW())
+ON CONFLICT (chain_type, tx_hash) DO NOTHING`
+
+	_, err := tx.Exec(stmt, chainType, txHash, blockHeight)
+	if err != nil {
+		return fmt.Errorf("failed to mark transaction as processed: %w", err)
+	}
+
+	return nil
+}

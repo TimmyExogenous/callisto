@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -269,6 +270,79 @@ func (m *Module) validateXRPAddressBinding(senderAddr, imuachainAddr, txHash str
 	return true
 }
 
+// processTransactionWithRetry executes a transaction function with retry logic for database errors
+func (m *Module) processTransactionWithRetry(chainType string, txFunc func() error) error {
+	const maxRetries = 3
+
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		err := txFunc()
+		if err == nil {
+			return nil // Success
+		}
+
+		lastErr = err
+
+		// Check if error is retryable
+		if !isRetryableDatabaseError(err) {
+			// Non-retryable error, fail immediately
+			return err
+		}
+
+		if attempt < maxRetries-1 {
+			// Exponential backoff: 1s, 2s, 4s...
+			backoff := time.Duration(1<<uint(attempt)) * time.Second
+			log.Warn().
+				Err(err).
+				Str("chain", chainType).
+				Int("attempt", attempt+1).
+				Dur("backoff", backoff).
+				Msg("database transaction failed, retrying")
+
+			time.Sleep(backoff)
+		}
+	}
+
+	return fmt.Errorf("transaction failed after %d retries: %w", maxRetries, lastErr)
+}
+
+// isRetryableDatabaseError checks if a database error should be retried
+func isRetryableDatabaseError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := strings.ToLower(err.Error())
+
+	// Deadlock errors
+	if strings.Contains(errStr, "deadlock") ||
+		strings.Contains(errStr, "lock wait timeout") {
+		return true
+	}
+
+	// Connection errors
+	if strings.Contains(errStr, "connection refused") ||
+		strings.Contains(errStr, "connection reset") ||
+		strings.Contains(errStr, "connection lost") ||
+		strings.Contains(errStr, "broken pipe") {
+		return true
+	}
+
+	// Serialization failures (PostgreSQL)
+	if strings.Contains(errStr, "serialization failure") ||
+		strings.Contains(errStr, "could not serialize") {
+		return true
+	}
+
+	// Lock acquisition timeouts
+	if strings.Contains(errStr, "lock acquisition") ||
+		strings.Contains(errStr, "timeout") {
+		return true
+	}
+
+	return false
+}
+
 // sortBTCTransactions sorts BTC transactions by block height and transaction index
 func sortBTCTransactions(txs []types.BTCTx) {
 	sort.Slice(txs, func(i, j int) bool {
@@ -355,6 +429,8 @@ func (m *Module) refetchBTCStates() error {
 	sortBTCTransactions(transactions)
 
 	processedCount := 0
+	duplicateCount := 0
+
 	// Process transactions with address binding validation and deduplication
 	for _, tx := range transactions {
 		// Check if transaction already processed
@@ -362,22 +438,30 @@ func (m *Module) refetchBTCStates() error {
 			log.Err(err).Str("txid", tx.TxID).Msg("error checking if BTC transaction is processed")
 			continue
 		} else if processed {
+			duplicateCount++
 			log.Debug().Str("txid", tx.TxID).Msg("BTC transaction already processed, skipping")
 			continue
 		}
 
-		if err := m.processBTCTx(tx, currentHeight); err != nil {
+		if err := m.processBTCTxWithTransaction(tx, currentHeight); err != nil {
 			log.Err(err).Str("txid", tx.TxID).Msg("error processing BTC transaction")
 			continue
 		}
 
-		// Mark transaction as processed
-		if err := m.database.MarkTransactionProcessed("BTC", tx.TxID, tx.BlockHeight); err != nil {
-			log.Err(err).Str("txid", tx.TxID).Msg("error marking BTC transaction as processed")
-		}
-
 		processedCount++
 	}
+
+	// Log processing statistics
+	totalTxs := len(transactions)
+	duplicateRate := float64(duplicateCount) / float64(totalTxs) * 100
+	log.Info().
+		Int("total_txs", totalTxs).
+		Int("processed", processedCount).
+		Int("duplicates", duplicateCount).
+		Float64("duplicate_rate_percent", duplicateRate).
+		Int64("from_height", scanState.SafeHeight).
+		Int64("to_height", safeCurrentHeight).
+		Msg("BTC transaction processing statistics")
 
 	// Update scan state
 	newScanState := &types.ScanState{
@@ -437,94 +521,6 @@ func (m *Module) getBTCCurrentBlockHeight() (int64, error) {
 	}
 
 	return height, nil
-}
-
-// getBTCVaultTransactions gets all transactions for the BTC vault address
-func (m *Module) getBTCVaultTransactions() ([]types.BTCTx, error) {
-	var allTxs []types.BTCTx
-	lastSeenTxID := ""
-	iterations := 0
-
-	// Create HTTP client with timeout
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-
-	for iterations < m.Config.MaxFetchIterations {
-		url := fmt.Sprintf("%s/api/address/%s/txs", m.Config.BTCRPC, m.Config.BTCVaultAddr)
-		if lastSeenTxID != "" {
-			url = fmt.Sprintf("%s/api/address/%s/txs/chain/%s", m.Config.BTCRPC, m.Config.BTCVaultAddr, lastSeenTxID)
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-		cancel()
-		if err != nil {
-			return nil, fmt.Errorf("failed to create request: %s", err)
-		}
-
-		var resp *http.Response
-
-		// Retry logic for network errors
-		maxRetries := 3
-		for retry := 0; retry < maxRetries; retry++ {
-			resp, err = client.Do(req)
-			if err == nil && resp.StatusCode == http.StatusOK {
-				break
-			}
-
-			if resp != nil {
-				resp.Body.Close()
-			}
-
-			if retry < maxRetries-1 {
-				log.Warn().Err(err).Int("retry", retry+1).Msg("BTC API request failed, retrying")
-				time.Sleep(time.Duration(retry+1) * 500 * time.Millisecond)
-			}
-		}
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch transactions after %d retries: %s", maxRetries, err)
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			break
-		}
-
-		var txs []types.BTCTx
-		if err := json.NewDecoder(resp.Body).Decode(&txs); err != nil {
-			resp.Body.Close()
-			return nil, fmt.Errorf("failed to decode response: %s", err)
-		}
-		resp.Body.Close()
-
-		if len(txs) == 0 {
-			break
-		}
-
-		// Filter only confirmed transactions
-		for _, tx := range txs {
-			if tx.Confirmed {
-				allTxs = append(allTxs, tx)
-			}
-		}
-
-		lastSeenTxID = txs[len(txs)-1].TxID
-		iterations++
-
-		// Add small delay to avoid overwhelming the API
-		if iterations < m.Config.MaxFetchIterations {
-			time.Sleep(100 * time.Millisecond)
-		}
-	}
-
-	if iterations >= m.Config.MaxFetchIterations {
-		log.Warn().Int("max_iterations", m.Config.MaxFetchIterations).
-			Msg("reached maximum iterations while fetching BTC transactions")
-	}
-
-	return allTxs, nil
 }
 
 // getBTCVaultTransactionsFromHeight gets BTC vault transactions from a specific height range
@@ -657,6 +653,49 @@ func (m *Module) isBTCVaultTransaction(tx types.BTCTx) bool {
 	}
 
 	return false
+}
+
+// processBTCTxWithTransaction processes a single BTC transaction within a database transaction
+// Note: Duplicate processing check is already done at the caller level, but we keep
+// the database-level atomicity guarantee with ON CONFLICT DO NOTHING
+func (m *Module) processBTCTxWithTransaction(tx types.BTCTx, currentHeight int64) error {
+	return m.processTransactionWithRetry("BTC", func() error {
+		return m.database.WithTransaction(func(dbTx *sql.Tx) error {
+			// 1. Validate transaction first (no database writes)
+			// Check confirmations
+			if !tx.Confirmed || tx.BlockHeight <= 0 {
+				return nil // Skip unconfirmed transactions
+			}
+
+			confirmations := currentHeight - tx.BlockHeight + 1
+			if confirmations < int64(m.Config.BTCMinConfirmations) {
+				return nil // Not enough confirmations
+			}
+
+			// Validate transaction
+			isValid, opReturnData, err := m.validateBTCTx(tx)
+			if err != nil {
+				return fmt.Errorf("error validating BTC transaction: %w", err)
+			}
+
+			if !isValid {
+				return nil // Invalid transaction, skip silently
+			}
+
+			// 2. Save business data
+			if err := m.saveBTCTransaction(tx, opReturnData); err != nil {
+				return fmt.Errorf("failed to save BTC transaction data: %w", err)
+			}
+
+			// 3. Mark as processed last (atomicity guarantee)
+			// Note: ON CONFLICT DO NOTHING in the database handles concurrent processing
+			if err := m.database.MarkTransactionProcessedInTx(dbTx, "BTC", tx.TxID, tx.BlockHeight); err != nil {
+				return fmt.Errorf("failed to mark BTC transaction as processed: %w", err)
+			}
+
+			return nil
+		})
+	})
 }
 
 // processBTCTx processes a single BTC transaction
@@ -960,6 +999,8 @@ func (m *Module) refetchXRPStates() error {
 	sortXRPTransactions(transactions)
 
 	processedCount := 0
+	duplicateCount := 0
+
 	// Process transactions with address binding validation and deduplication
 	for _, tx := range transactions {
 		// Check if transaction already processed
@@ -967,22 +1008,30 @@ func (m *Module) refetchXRPStates() error {
 			log.Err(err).Str("hash", tx.Hash).Msg("error checking if XRP transaction is processed")
 			continue
 		} else if processed {
+			duplicateCount++
 			log.Debug().Str("hash", tx.Hash).Msg("XRP transaction already processed, skipping")
 			continue
 		}
 
-		if err := m.processXRPTx(tx, currentLedger); err != nil {
+		if err := m.processXRPTxWithTransaction(tx, currentLedger); err != nil {
 			log.Err(err).Str("hash", tx.Hash).Msg("error processing XRP transaction")
 			continue
 		}
 
-		// Mark transaction as processed
-		if err := m.database.MarkTransactionProcessed("XRP", tx.Hash, tx.LedgerIndex); err != nil {
-			log.Err(err).Str("hash", tx.Hash).Msg("error marking XRP transaction as processed")
-		}
-
 		processedCount++
 	}
+
+	// Log processing statistics
+	totalTxs := len(transactions)
+	duplicateRate := float64(duplicateCount) / float64(totalTxs) * 100
+	log.Info().
+		Int("total_txs", totalTxs).
+		Int("processed", processedCount).
+		Int("duplicates", duplicateCount).
+		Float64("duplicate_rate_percent", duplicateRate).
+		Int64("from_ledger", scanState.SafeHeight).
+		Int64("to_ledger", safeCurrentLedger).
+		Msg("XRP transaction processing statistics")
 
 	// Update scan state
 	newScanState := &types.ScanState{
@@ -1191,130 +1240,47 @@ func parseXRPTransaction(txData map[string]interface{}) (*types.XRPTransaction, 
 	return tx, nil
 }
 
-// getXRPVaultTransactions gets all transactions for the XRP vault address
-func (m *Module) getXRPVaultTransactions() ([]types.XRPTransaction, error) {
-	var allTxs []types.XRPTransaction
-	var marker string
-	iterations := 0
-
-	for {
-		// Prevent infinite loops with iteration limit
-		iterations++
-		if iterations > m.Config.MaxFetchIterations {
-			log.Warn().Int("iterations", iterations).Msg("reached maximum fetch iterations, stopping XRP transaction fetch")
-			break
-		}
-
-		// Add small delay to avoid overwhelming the API
-		time.Sleep(100 * time.Millisecond)
-
-		requestBody := map[string]interface{}{
-			"method": "account_tx",
-			"params": []map[string]interface{}{
-				{
-					"account":          m.Config.XRPVaultAddr,
-					"ledger_index_min": -1,
-					"ledger_index_max": -1,
-					"limit":            200,
-				},
-			},
-		}
-
-		if marker != "" {
-			requestBody["params"].([]map[string]interface{})[0]["marker"] = marker
-		}
-
-		jsonBody, err := json.Marshal(requestBody)
-		if err != nil {
-			return nil, err
-		}
-
-		// Create HTTP client with timeout
-		client := &http.Client{
-			Timeout: 30 * time.Second,
-		}
-
-		ctx, cancel := context.WithTimeout(m.ctx, 30*time.Second)
-		req, err := http.NewRequestWithContext(ctx, "POST", m.Config.XRPRPC, bytes.NewBuffer(jsonBody))
-		if err != nil {
-			cancel()
-			return nil, err
-		}
-		req.Header.Set("Content-Type", "application/json")
-
-		var resp *http.Response
-
-		// Retry logic for network errors
-		maxRetries := 3
-		for retry := 0; retry < maxRetries; retry++ {
-			resp, err = client.Do(req)
-			if err == nil && resp.StatusCode == http.StatusOK {
-				break
+// processXRPTxWithTransaction processes a single XRP transaction within a database transaction
+// Note: Duplicate processing check is already done at the caller level, but we keep
+// the database-level atomicity guarantee with ON CONFLICT DO NOTHING
+func (m *Module) processXRPTxWithTransaction(tx types.XRPTransaction, currentLedger int64) error {
+	return m.processTransactionWithRetry("XRP", func() error {
+		return m.database.WithTransaction(func(dbTx *sql.Tx) error {
+			// 1. Validate transaction first (no database writes)
+			// Check confirmations
+			if !tx.Validated || tx.LedgerIndex <= 0 {
+				return nil // Skip unvalidated transactions
 			}
 
-			if resp != nil {
-				resp.Body.Close()
+			confirmations := currentLedger - tx.LedgerIndex + 1
+			if confirmations < int64(m.Config.XRPMinConfirmations) {
+				return nil // Not enough confirmations
 			}
 
-			if retry < maxRetries-1 {
-				log.Warn().Err(err).Int("retry", retry+1).Msg("XRP API request failed, retrying")
-				time.Sleep(time.Duration(retry+1) * 500 * time.Millisecond)
-			}
-		}
-		cancel()
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch XRP transactions after %d retries: %s", maxRetries, err)
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			break
-		}
-
-		var response map[string]interface{}
-		if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-			resp.Body.Close()
-			return nil, err
-		}
-		resp.Body.Close()
-
-		result, ok := response["result"].(map[string]interface{})
-		if !ok {
-			break
-		}
-
-		transactions, ok := result["transactions"].([]interface{})
-		if !ok || len(transactions) == 0 {
-			break
-		}
-
-		// Process transactions with safe parsing
-		for _, txData := range transactions {
-			txMap, ok := txData.(map[string]interface{})
-			if !ok {
-				continue
-			}
-
-			// Use safe parsing function instead of direct type assertions
-			tx, err := parseXRPTransaction(txMap)
+			// Validate transaction
+			isValid, memoData, err := m.validateXRPTx(tx)
 			if err != nil {
-				log.Debug().Str("error", err.Error()).Msg("skipping invalid XRP transaction")
-				continue
+				return fmt.Errorf("error validating XRP transaction: %w", err)
 			}
 
-			allTxs = append(allTxs, *tx)
-		}
+			if !isValid {
+				return nil // Invalid transaction, skip silently
+			}
 
-		// Check for marker with safe type assertion
-		if markerVal, ok := result["marker"].(string); ok {
-			marker = markerVal
-		} else {
-			break
-		}
-	}
+			// 2. Save business data
+			if err := m.saveXRPTransaction(tx, memoData); err != nil {
+				return fmt.Errorf("failed to save XRP transaction data: %w", err)
+			}
 
-	return allTxs, nil
+			// 3. Mark as processed last (atomicity guarantee)
+			// Note: ON CONFLICT DO NOTHING in the database handles concurrent processing
+			if err := m.database.MarkTransactionProcessedInTx(dbTx, "XRP", tx.Hash, tx.LedgerIndex); err != nil {
+				return fmt.Errorf("failed to mark XRP transaction as processed: %w", err)
+			}
+
+			return nil
+		})
+	})
 }
 
 // processXRPTx processes a single XRP transaction
@@ -1688,6 +1654,10 @@ func (m *Module) isXRPVaultTransaction(tx types.XRPTransaction) bool {
 func (m *Module) refetchBootstrapStates() error {
 	log.Debug().Str("module", "bootstrap").Msg("starting parallel bootstrap states refetch")
 
+	// Create a context with timeout for overall operation (10 minutes)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
 	var wg sync.WaitGroup
 
 	// Define a struct to hold chain processing results
@@ -1698,10 +1668,30 @@ func (m *Module) refetchBootstrapStates() error {
 
 	resultChan := make(chan chainResult, 3)
 
+	// Channel to signal when all goroutines are done
+	doneChan := make(chan struct{})
+
 	// Parallel processing for ETH states
 	wg.Add(1)
 	go func() {
-		defer wg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().Interface("panic", r).Str("chain", "ETH").
+					Msg("ETH states refetch goroutine panicked")
+				resultChan <- chainResult{chainName: "ETH", err: fmt.Errorf("goroutine panic: %v", r)}
+			}
+			wg.Done()
+		}()
+
+		// Check for cancellation before starting
+		select {
+		case <-ctx.Done():
+			log.Warn().Str("chain", "ETH").Msg("ETH states refetch cancelled before starting")
+			resultChan <- chainResult{chainName: "ETH", err: ctx.Err()}
+			return
+		default:
+		}
+
 		log.Debug().Str("chain", "ETH").Msg("starting ETH states refetch")
 		start := time.Now()
 
@@ -1709,8 +1699,13 @@ func (m *Module) refetchBootstrapStates() error {
 		duration := time.Since(start)
 
 		if err != nil {
-			log.Error().Err(err).Str("chain", "ETH").Dur("duration", duration).
-				Msg("ETH states refetch failed")
+			if err == context.DeadlineExceeded || err == context.Canceled {
+				log.Warn().Err(err).Str("chain", "ETH").Dur("duration", duration).
+					Msg("ETH states refetch cancelled or timed out")
+			} else {
+				log.Error().Err(err).Str("chain", "ETH").Dur("duration", duration).
+					Msg("ETH states refetch failed")
+			}
 			resultChan <- chainResult{chainName: "ETH", err: err}
 		} else {
 			log.Info().Str("chain", "ETH").Dur("duration", duration).
@@ -1722,7 +1717,24 @@ func (m *Module) refetchBootstrapStates() error {
 	// Parallel processing for BTC states
 	wg.Add(1)
 	go func() {
-		defer wg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().Interface("panic", r).Str("chain", "BTC").
+					Msg("BTC states refetch goroutine panicked")
+				resultChan <- chainResult{chainName: "BTC", err: fmt.Errorf("goroutine panic: %v", r)}
+			}
+			wg.Done()
+		}()
+
+		// Check for cancellation before starting
+		select {
+		case <-ctx.Done():
+			log.Warn().Str("chain", "BTC").Msg("BTC states refetch cancelled before starting")
+			resultChan <- chainResult{chainName: "BTC", err: ctx.Err()}
+			return
+		default:
+		}
+
 		log.Debug().Str("chain", "BTC").Msg("starting BTC states refetch")
 		start := time.Now()
 
@@ -1730,8 +1742,13 @@ func (m *Module) refetchBootstrapStates() error {
 		duration := time.Since(start)
 
 		if err != nil {
-			log.Error().Err(err).Str("chain", "BTC").Dur("duration", duration).
-				Msg("BTC states refetch failed")
+			if err == context.DeadlineExceeded || err == context.Canceled {
+				log.Warn().Err(err).Str("chain", "BTC").Dur("duration", duration).
+					Msg("BTC states refetch cancelled or timed out")
+			} else {
+				log.Error().Err(err).Str("chain", "BTC").Dur("duration", duration).
+					Msg("BTC states refetch failed")
+			}
 			resultChan <- chainResult{chainName: "BTC", err: err}
 		} else {
 			log.Info().Str("chain", "BTC").Dur("duration", duration).
@@ -1743,7 +1760,24 @@ func (m *Module) refetchBootstrapStates() error {
 	// Parallel processing for XRP states
 	wg.Add(1)
 	go func() {
-		defer wg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().Interface("panic", r).Str("chain", "XRP").
+					Msg("XRP states refetch goroutine panicked")
+				resultChan <- chainResult{chainName: "XRP", err: fmt.Errorf("goroutine panic: %v", r)}
+			}
+			wg.Done()
+		}()
+
+		// Check for cancellation before starting
+		select {
+		case <-ctx.Done():
+			log.Warn().Str("chain", "XRP").Msg("XRP states refetch cancelled before starting")
+			resultChan <- chainResult{chainName: "XRP", err: ctx.Err()}
+			return
+		default:
+		}
+
 		log.Debug().Str("chain", "XRP").Msg("starting XRP states refetch")
 		start := time.Now()
 
@@ -1751,8 +1785,13 @@ func (m *Module) refetchBootstrapStates() error {
 		duration := time.Since(start)
 
 		if err != nil {
-			log.Error().Err(err).Str("chain", "XRP").Dur("duration", duration).
-				Msg("XRP states refetch failed")
+			if err == context.DeadlineExceeded || err == context.Canceled {
+				log.Warn().Err(err).Str("chain", "XRP").Dur("duration", duration).
+					Msg("XRP states refetch cancelled or timed out")
+			} else {
+				log.Error().Err(err).Str("chain", "XRP").Dur("duration", duration).
+					Msg("XRP states refetch failed")
+			}
 			resultChan <- chainResult{chainName: "XRP", err: err}
 		} else {
 			log.Info().Str("chain", "XRP").Dur("duration", duration).
@@ -1761,8 +1800,33 @@ func (m *Module) refetchBootstrapStates() error {
 		}
 	}()
 
-	// Wait for all goroutines to complete
-	wg.Wait()
+	// Start a goroutine to signal when all work is done
+	go func() {
+		wg.Wait()
+		close(doneChan)
+	}()
+
+	// Wait for either all goroutines to complete or timeout
+	select {
+	case <-doneChan:
+		// All goroutines completed normally
+		log.Debug().Msg("all bootstrap refetch goroutines completed")
+	case <-ctx.Done():
+		// Timeout occurred
+		log.Warn().Err(ctx.Err()).Msg("bootstrap refetch operation timed out, waiting for goroutines to finish")
+		// Cancel context to signal goroutines to stop
+		cancel()
+		// Wait a bit more for graceful shutdown
+		gracefulCtx, gracefulCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer gracefulCancel()
+		select {
+		case <-doneChan:
+			log.Info().Msg("all bootstrap refetch goroutines finished gracefully after timeout")
+		case <-gracefulCtx.Done():
+			log.Error().Msg("some bootstrap refetch goroutines did not finish gracefully - continuing anyway")
+		}
+	}
+
 	close(resultChan)
 
 	// Collect and process results
@@ -1771,7 +1835,11 @@ func (m *Module) refetchBootstrapStates() error {
 
 	for result := range resultChan {
 		if result.err != nil {
-			errors = append(errors, fmt.Sprintf("%s: %s", result.chainName, result.err.Error()))
+			if result.err == context.DeadlineExceeded || result.err == context.Canceled {
+				errors = append(errors, fmt.Sprintf("%s: timed out", result.chainName))
+			} else {
+				errors = append(errors, fmt.Sprintf("%s: %s", result.chainName, result.err.Error()))
+			}
 		} else {
 			successCount++
 		}

@@ -141,10 +141,10 @@ type ScanState struct {
 }
 
 type ProcessedTransaction struct {
-	ChainType    string    `db:"chain_type"`
-	TxHash       string    `db:"tx_hash"`
-	BlockHeight  int64     `db:"block_height"`
-	ProcessedAt  time.Time `db:"processed_at"`
+	ChainType   string    `db:"chain_type"`
+	TxHash      string    `db:"tx_hash"`
+	BlockHeight int64     `db:"block_height"`
+	ProcessedAt time.Time `db:"processed_at"`
 }
 
 // Address binding related types
@@ -154,4 +154,34 @@ type AddressBinding struct {
 	TargetAddr string    `db:"target_addr"`
 	CreatedAt  time.Time `db:"created_at"`
 	UpdatedAt  time.Time `db:"updated_at"`
+}
+
+// Transaction batch processing
+type TransactionBatch struct {
+	ID           string    `db:"id"`
+	ChainType    string    `db:"chain_type"`
+	StartHeight  int64     `db:"start_height"`
+	EndHeight    int64     `db:"end_height"`
+	Status       string    `db:"status"`
+	TotalTxs     int       `db:"total_txs"`
+	ProcessedTxs int       `db:"processed_txs"`
+	FailedTxs    int       `db:"failed_txs"`
+	CreatedAt    time.Time `db:"created_at"`
+	UpdatedAt    time.Time `db:"updated_at"`
+}
+
+// Batch processing states
+const (
+	BatchStatusPending    = "pending"
+	BatchStatusProcessing = "processing"
+	BatchStatusCompleted  = "completed"
+	BatchStatusFailed     = "failed"
+)
+
+// Transaction retry configuration
+type RetryConfig struct {
+	MaxRetries      int           `json:"max_retries"`
+	InitialDelay    time.Duration `json:"initial_delay"`
+	MaxDelay        time.Duration `json:"max_delay"`
+	BackoffMultiple float64       `json:"backoff_multiple"`
 }
