@@ -1,9 +1,10 @@
 package bootstrap
 
 import (
-	"github.com/forbole/callisto/v4/types"
 	"math/big"
 	"time"
+
+	"github.com/forbole/callisto/v4/types"
 )
 
 // RunAdditionalOperations implements modules.AdditionalOperationsModule

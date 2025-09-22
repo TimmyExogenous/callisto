@@ -2,8 +2,9 @@ package database
 
 import (
 	"fmt"
-	"github.com/forbole/callisto/v4/types"
 	"time"
+
+	"github.com/forbole/callisto/v4/types"
 )
 
 func (db *Db) SaveBootstrapValidator(v *types.BootstrapValidator) error {

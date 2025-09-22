@@ -1,31 +1,18 @@
 package bootstrap
 
 import (
-	"context"
 	"fmt"
+	"math/big"
+	"time"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	ethcoretypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/forbole/callisto/v4/modules/bootstrap/bootstrap_binding"
 	"github.com/forbole/callisto/v4/types"
 	assetstypes "github.com/imua-xyz/imuachain/x/assets/types"
 	"github.com/rs/zerolog/log"
-	"math/big"
-	"time"
 )
-
-func (m *Module) getSenderByTransactionRawLog(ctx context.Context, rawLog ethcoretypes.Log) (common.Address, error) {
-	tx, _, err := m.EthHttpClient.TransactionByHash(ctx, rawLog.TxHash)
-	if err != nil {
-		return common.Address{}, fmt.Errorf("failed to get the commission update transaction,err:%s", err)
-	}
-	txSender, err := m.EthHttpClient.TransactionSender(ctx, tx, rawLog.BlockHash, rawLog.TxIndex)
-	if err != nil {
-		return common.Address{}, fmt.Errorf("failed to get the sender of commission update transaction,err:%s", err)
-	}
-	return txSender, nil
-}
 
 func (m *Module) updateStatesAfterStakerAssetChange(stakerAddr, assetAddr common.Address) (string, string, error) {
 	stakerID, assetID, err := m.updateStakerAsset(stakerAddr, assetAddr)
@@ -299,10 +286,4 @@ func (m *Module) RunAsyncOperations() {
 		}
 	}
 
-}
-
-// subscribeAndHandleEvents subscribes and handles all events from the bootstrap contract.
-func (m *Module) subscribeAndHandleEvents() error {
-
-	return nil
 }

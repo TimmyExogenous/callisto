@@ -1,9 +1,12 @@
 package bootstrap
 
 import (
-	sdkmath "cosmossdk.io/math"
 	"fmt"
-	binance "github.com/adshao/go-binance/v2"
+	"math/big"
+	"time"
+
+	sdkmath "cosmossdk.io/math"
+	"github.com/adshao/go-binance/v2"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -14,8 +17,6 @@ import (
 	operatorkeeper "github.com/imua-xyz/imuachain/x/operator/keeper"
 	aggregatorv3 "github.com/imua-xyz/price-feeder/fetcher/chainlink/aggregatorv3"
 	"github.com/rs/zerolog/log"
-	"math/big"
-	"time"
 )
 
 func (m *Module) RegisterPeriodicOperations(scheduler *gocron.Scheduler) error {
@@ -249,16 +250,21 @@ func (m *Module) refetchETHStates() error {
 	return nil
 }
 
+// todo: remove the nolint flag after the implementation
+//
+//nolint:unparam
 func (m *Module) refetchBTCStates() error {
 	log.Debug().Str("module", "bootstrap").Str("refetching", "BTC states").
 		Msg("refetching BTC states")
-	//
 	return nil
 }
+
+// todo: remove the nolint flag after the implementation
+//
+//nolint:unparam
 func (m *Module) refetchXRPStates() error {
 	log.Debug().Str("module", "bootstrap").Str("refetching", "XRP states").
 		Msg("refetching XRP states")
-	//
 	return nil
 }
 
@@ -312,7 +318,7 @@ func (m *Module) updatePricesAndTVL() error {
 				Msg("the token oracle feed info hasn't been configured")
 			// don't return to continue updating prices for the other assets
 		} else {
-			aggregatorContract, err := aggregatorv3.NewAggregatorV3Interface(oracleFeedAddr, m.EthHttpClient)
+			aggregatorContract, err := aggregatorv3.NewAggregatorV3Interface(oracleFeedAddr, m.EthHTTPClient)
 			if err != nil {
 				return err
 			}

@@ -24,9 +24,9 @@ type Config struct {
 }
 
 // NewConfig allows to build a new Config instance
-func NewConfig(ethHttp, ethWebsocket, btcRPC, xrpRPC string) *Config {
+func NewConfig(ethHTTP, ethWebsocket, btcRPC, xrpRPC string) *Config {
 	return &Config{
-		ETHHttp:      ethHttp,
+		ETHHttp:      ethHTTP,
 		ETHWebsocket: ethWebsocket,
 		BTCRPC:       btcRPC,
 		XRPRPC:       xrpRPC,

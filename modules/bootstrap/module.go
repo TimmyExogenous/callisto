@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -21,7 +22,7 @@ var (
 
 type Module struct {
 	database      *callistodb.Db
-	EthHttpClient *ethclient.Client
+	EthHTTPClient *ethclient.Client
 	EthWSClient   *ethclient.Client
 	Config        Config
 	BootstrapAddr common.Address
@@ -55,7 +56,7 @@ func NewModule(
 	if err != nil {
 		panic(err)
 	}
-	ethHttpClient := ethclient.NewClient(httpRC)
+	ethHTTPClient := ethclient.NewClient(httpRC)
 
 	websocketRC, err := rpc.DialContext(context.Background(), bootstrapCfg.ETHWebsocket)
 	if err != nil {
@@ -65,7 +66,7 @@ func NewModule(
 
 	// create the sessions for bootstrap and storage contracts.
 	ctx := context.Background()
-	bootstrapCaller, err := bootstrap_binding.NewBootstrapCaller(bootstrapAddr, ethHttpClient)
+	bootstrapCaller, err := bootstrap_binding.NewBootstrapCaller(bootstrapAddr, ethHTTPClient)
 	if err != nil {
 		panic(fmt.Errorf("failed to new bootstrap caller,err:%s", err))
 	}
@@ -82,7 +83,7 @@ func NewModule(
 
 	return &Module{
 		database:          database,
-		EthHttpClient:     ethHttpClient,
+		EthHTTPClient:     ethHTTPClient,
 		EthWSClient:       ethWSClient,
 		Config:            *bootstrapCfg,
 		BootstrapAddr:     bootstrapAddr,
