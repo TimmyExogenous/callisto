@@ -140,7 +140,7 @@ func (m *Module) RunAsyncOperations() {
 	if err != nil {
 		panic(fmt.Errorf("failed to watch whitelist token addition,err:%s", err))
 	}
-	defer keyReplaceSub.Unsubscribe()
+	defer newAssetSub.Unsubscribe()
 
 	// create event channels for deposit, claim, delegation and undelegation
 	depositCh := make(chan *bootstrap_binding.BootstrapDepositResult)

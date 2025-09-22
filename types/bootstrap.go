@@ -16,7 +16,7 @@ type BootstrapValidator struct {
 type BootstrapClientChain struct {
 	Name      string `yaml:"name"`
 	MetaInfo  string `yaml:"meta_info"`
-	LZChainID int64  `yaml:"lz_chain_id"`
+	LZChainID uint64 `yaml:"lz_chain_id"`
 }
 
 type BootstrapToken struct {

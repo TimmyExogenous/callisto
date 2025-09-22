@@ -26,25 +26,25 @@ func (m *Module) RegisterPeriodicOperations(scheduler *gocron.Scheduler) error {
 	if _, err := scheduler.Every(m.Config.ETHUpdateInterval).Minutes().Do(func() {
 		m.refetchETHStates()
 	}); err != nil {
-		return fmt.Errorf("failed to set up the daily ETH states refetch operation: %s", err)
+		return fmt.Errorf("failed to set up the periodic ETH states refetch operation: %s", err)
 	}
 
 	if _, err := scheduler.Every(m.Config.BTCUpdateInterval).Minutes().Do(func() {
 		m.refetchBTCStates()
 	}); err != nil {
-		return fmt.Errorf("failed to set up the daily BTC states refetch operation: %s", err)
+		return fmt.Errorf("failed to set up the periodic BTC states refetch operation: %s", err)
 	}
 
 	if _, err := scheduler.Every(m.Config.XRPUpdateInterval).Minutes().Do(func() {
 		m.refetchXRPStates()
 	}); err != nil {
-		return fmt.Errorf("failed to set up the daily XRP states refetch operation: %s", err)
+		return fmt.Errorf("failed to set up the periodic XRP states refetch operation: %s", err)
 	}
 
 	if _, err := scheduler.Every(m.Config.PriceUpdateInterval).Minutes().Do(func() {
 		m.updatePricesAndTVL()
 	}); err != nil {
-		return fmt.Errorf("failed to set up the daily prices update operation: %s", err)
+		return fmt.Errorf("failed to set up the periodic prices update operation: %s", err)
 	}
 	return nil
 }
@@ -111,7 +111,7 @@ func (m *Module) refetchETHStates() error {
 		if err != nil {
 			return fmt.Errorf("failed to call Validators,validatorIMAddr:%s,err:%s", validatorIMAddr, err)
 		}
-		m.database.SaveBootstrapValidator(&types.BootstrapValidator{
+		err = m.database.SaveBootstrapValidator(&types.BootstrapValidator{
 			ValidatorEthAddress: validatorEthAddr.String(),
 			ValidatorIMAddress:  validatorIMAddr,
 			ValidatorName:       validatorInfo.Name,
@@ -121,6 +121,9 @@ func (m *Module) refetchETHStates() error {
 			MaxChangeRate:       validatorInfo.Commission.MaxChangeRate.String(),
 			UpdatedAt:           time.Now(),
 		})
+		if err != nil {
+			return err
+		}
 		validatorIMAddresses[i] = validatorIMAddr
 		validatorETHAddresses[i] = validatorEthAddr
 	}

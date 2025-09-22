@@ -70,7 +70,7 @@ CREATE TABLE bootstrap_delegation_states
     PRIMARY KEY (staker_id, asset_id, operator_addr),
     CONSTRAINT fk_operator FOREIGN KEY (operator_addr) REFERENCES bootstrap_validator (validator_im_addr),
     CONSTRAINT fk_asset_id FOREIGN KEY (asset_id) REFERENCES bootstrap_tokens (asset_id),
-    CONSTRAINT fk_staker_id FOREIGN KEY (staker_id) REFERENCES bootstrap_staker_assets (staker_id)
+    CONSTRAINT fk_staker_asset FOREIGN KEY (staker_id, asset_id) REFERENCES bootstrap_staker_assets (staker_id, asset_id)
 );
 
 CREATE INDEX idx_delegations_staker_id ON bootstrap_delegation_states (staker_id);

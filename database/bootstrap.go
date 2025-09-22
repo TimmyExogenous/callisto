@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/forbole/callisto/v4/types"
@@ -130,7 +131,7 @@ SET name                 = EXCLUDED.name,
 		t.AssetID,
 		t.Name,
 		t.Symbol,
-		t.Address,
+		strings.ToLower(t.Address),
 		t.Decimals,
 		t.LZChainID,
 		t.StakingTotalAmount,

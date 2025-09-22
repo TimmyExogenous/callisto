@@ -154,7 +154,7 @@ func (suite *DbTestSuite) getValidator(consAddr, valAddr, pubkey string) types.V
 		&maxRate,
 		1,
 	)
-	err := suite.database.SaveValidatorData(validator)
+	err := suite.database.SaveValidatorData(validator, "")
 	suite.Require().NoError(err)
 
 	return validator

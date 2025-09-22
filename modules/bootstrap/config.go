@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"fmt"
 	callistotypes "github.com/forbole/callisto/v4/types"
 	"gopkg.in/yaml.v3"
 )
@@ -39,5 +40,11 @@ func ParseConfig(bz []byte) (*Config, error) {
 	}
 	var cfg T
 	err := yaml.Unmarshal(bz, &cfg)
-	return cfg.Config, err
+	if err != nil {
+		return nil, fmt.Errorf("parse bootstrap config: %w", err)
+	}
+	if cfg.Config == nil {
+		return nil, fmt.Errorf("bootstrap config missing")
+	}
+	return cfg.Config, nil
 }
