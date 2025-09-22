@@ -33,44 +33,6 @@ pruning:
 dogfood:
   chain_id_without_revision: "imuachaintestnet_233"
 
-bootstrap:
-  eth_http: ""
-  eth_websocket: ""
-  btc_rpc: ""
-  xrp_rpc: ""
-  bootstrap_addr: ""
-  eth_update_interval: 1440
-  btc_update_interval: 5
-  xrp_update_interval: 5
-  price_update_interval: 60
-  eth_lz_chain_id: 40217
-  client_chain_info:
-    - name: "Holesky"
-      meta_info: "Ethereum-testnet known as Holesky"
-      lz_chain_id: 40217
-    - name: "Bitcoin"
-      meta_info: "Bitcoin mainnet"
-      lz_chain_id: 1
-    - name: "XRP Ledger"
-      meta_info: "XRP Ledger mainnet"
-      lz_chain_id: 2
-  staking_token_infos:
-    - asset_id: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb_0x1"
-      name: "Bitcoin"
-      symbol: "BTC"
-      address: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-      decimals: 8
-      lz_chain_id: 1
-    - asset_id: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb_0x2"
-      name: "XRP"
-      symbol: "XRP"
-      address: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-      decimals: 6
-      lz_chain_id: 2
-  token_oracle_feeds:
-    - asset_id: ""
-      oracle_addr: ""
-
 node:
   type: remote
   config:
