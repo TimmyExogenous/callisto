@@ -35,6 +35,15 @@ CREATE TABLE bootstrap_tokens
     CONSTRAINT fk_layer_zero_chain_id FOREIGN KEY (layer_zero_chain_id) REFERENCES bootstrap_client_chains (layer_zero_chain_id)
 );
 
+CREATE TABLE bootstrap_token_prices
+(
+    asset_id   TEXT PRIMARY KEY,
+    price      NUMERIC NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP WITHOUT TIME ZONE,
+    CONSTRAINT fk_asset_id FOREIGN KEY (asset_id) REFERENCES bootstrap_tokens (asset_id)
+);
+
+
 CREATE TABLE bootstrap_staker_assets
 (
     staker_id    TEXT    NOT NULL,
@@ -82,3 +91,11 @@ CREATE TABLE bootstrap_operator_assets
 );
 CREATE INDEX idx_operator_assets_operator ON bootstrap_operator_assets (operator_addr);
 CREATE INDEX idx_operator_assets_asset_id ON bootstrap_operator_assets (asset_id);
+
+CREATE TABLE bootstrap_statistics
+(
+    one_row_id BOOLEAN NOT NULL DEFAULT TRUE PRIMARY KEY,
+    tvl        NUMERIC NOT NULL,
+    updated_at TIMESTAMP WITHOUT TIME ZONE,
+    CHECK (one_row_id)
+);

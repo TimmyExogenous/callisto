@@ -250,15 +250,17 @@ func (m *Module) RunAsyncOperations() {
 				}
 				if tokenInfo.TokenAddress == e.Token {
 					_, assetID := assetstypes.GetStakerIDAndAssetID(m.Config.ETHLZChainID, nil, e.Token[:])
-					err = m.database.SaveBootstrapToken(&types.BootstrapToken{
-						AssetID:            assetID,
-						Address:            e.Token.String(),
-						Name:               tokenInfo.Name,
-						Symbol:             tokenInfo.Symbol,
-						Decimals:           tokenInfo.Decimals,
-						UpdatedAt:          time.Now(),
-						LayerZeroChainID:   m.Config.ETHLZChainID,
+					err = m.database.SaveBootstrapToken(&types.BootstrapTokenState{
+						BootstrapToken: types.BootstrapToken{
+							AssetID:   assetID,
+							Address:   e.Token.String(),
+							Name:      tokenInfo.Name,
+							Symbol:    tokenInfo.Symbol,
+							Decimals:  tokenInfo.Decimals,
+							LZChainID: m.Config.ETHLZChainID,
+						},
 						StakingTotalAmount: big.NewInt(0).String(),
+						UpdatedAt:          time.Now(),
 					})
 					if err != nil {
 						log.Err(err).Str("token", e.Token.String()).Msg("failed to save the whitelist asset")

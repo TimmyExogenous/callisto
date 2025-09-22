@@ -1,12 +1,18 @@
 package bootstrap
 
 import (
+	sdkmath "cosmossdk.io/math"
 	"fmt"
+	binance "github.com/adshao/go-binance/v2"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/forbole/callisto/v4/types"
 	"github.com/go-co-op/gocron"
 	assetstypes "github.com/imua-xyz/imuachain/x/assets/types"
+	operatorkeeper "github.com/imua-xyz/imuachain/x/operator/keeper"
+	aggregatorv3 "github.com/imua-xyz/price-feeder/fetcher/chainlink/aggregatorv3"
 	"github.com/rs/zerolog/log"
 	"math/big"
 	"time"
@@ -34,6 +40,11 @@ func (m *Module) RegisterPeriodicOperations(scheduler *gocron.Scheduler) error {
 		return fmt.Errorf("failed to set up the daily XRP states refetch operation: %s", err)
 	}
 
+	if _, err := scheduler.Every(m.Config.PriceUpdateInterval).Minutes().Do(func() {
+		m.updatePricesAndTVL()
+	}); err != nil {
+		return fmt.Errorf("failed to set up the daily prices update operation: %s", err)
+	}
 	return nil
 }
 
@@ -132,14 +143,16 @@ func (m *Module) refetchETHStates() error {
 		if err != nil {
 			return fmt.Errorf("failed to call DepositsByToken,tokenAddr:%s,err:%s", tokenInfo.TokenAddress, err)
 		}
-		err = m.database.SaveBootstrapToken(&types.BootstrapToken{
-			AssetID:            assetID,
-			Address:            tokenInfo.TokenAddress.String(),
-			Name:               tokenInfo.Name,
-			Symbol:             tokenInfo.Symbol,
-			Decimals:           tokenInfo.Decimals,
+		err = m.database.SaveBootstrapToken(&types.BootstrapTokenState{
+			BootstrapToken: types.BootstrapToken{
+				AssetID:   assetID,
+				Address:   tokenInfo.TokenAddress.String(),
+				Name:      tokenInfo.Name,
+				Symbol:    tokenInfo.Symbol,
+				Decimals:  tokenInfo.Decimals,
+				LZChainID: m.Config.ETHLZChainID,
+			},
 			UpdatedAt:          time.Now(),
-			LayerZeroChainID:   m.Config.ETHLZChainID,
 			StakingTotalAmount: assetDepositAmount.String(),
 		})
 		if err != nil {
@@ -247,4 +260,87 @@ func (m *Module) refetchXRPStates() error {
 		Msg("refetching XRP states")
 	//
 	return nil
+}
+
+func (m *Module) updatePricesAndTVL() error {
+	log.Debug().Str("module", "bootstrap").Str("refetching", "prices and TVL").
+		Msg("refetching prices and TVL")
+	tokens, err := m.database.ListBootstrapTokens()
+	if err != nil {
+		return err
+	}
+
+	oracleFeedsMap := make(map[string]common.Address, len(m.Config.TokenOracleFeeds))
+	for _, tokenOracleFeed := range m.Config.TokenOracleFeeds {
+		oracleFeedsMap[tokenOracleFeed.AssetID] = common.HexToAddress(tokenOracleFeed.OracleAddr)
+	}
+	totalTVL := sdkmath.LegacyZeroDec()
+
+	for _, t := range tokens {
+		client := binance.NewClient("", "")
+		stakingAmountInt, ok := sdkmath.NewIntFromString(t.StakingTotalAmount)
+		if !ok {
+			log.Error().Str("stakingTotalAmount", t.StakingTotalAmount).Msg("failed to parse the staking amount to a big int")
+			stakingAmountInt = sdkmath.ZeroInt()
+		}
+		price, err := client.NewAveragePriceService().
+			Symbol(fmt.Sprintf("%sUSDT", t.Symbol)).
+			Do(m.ctx)
+		if err == nil {
+			// update the price
+			err = m.database.SaveBootstrapTokenPrice(t.AssetID, price.Price)
+			if err != nil {
+				return err
+			}
+			// calculate the total USD value of this asset
+			priceDec, err := sdkmath.LegacyNewDecFromStr(price.Price)
+			if err != nil {
+				log.Err(err).Str("binancePrice", price.Price).Msg("failed to parse the binance price to a big legacyDec")
+				// don't return to continue addressing the other assets
+				continue
+			}
+			divisor := sdkmath.NewIntWithDecimal(1, int(t.Decimals)) // #nosec G115
+			usdValue := priceDec.MulInt(stakingAmountInt).QuoInt(divisor)
+			totalTVL.AddMut(usdValue)
+			continue
+		}
+
+		// fetch the price from ChainLink if failed to fetch price from Binance
+		oracleFeedAddr, ok := oracleFeedsMap[t.AssetID]
+		if !ok {
+			log.Error().Str("module", "bootstrap").Str("assetID", t.AssetID).Str("name", t.Name).
+				Msg("the token oracle feed info hasn't been configured")
+			// don't return to continue updating prices for the other assets
+		} else {
+			aggregatorContract, err := aggregatorv3.NewAggregatorV3Interface(oracleFeedAddr, m.EthHttpClient)
+			if err != nil {
+				return err
+			}
+			aggregatorSession := aggregatorv3.AggregatorV3InterfaceSession{
+				Contract: aggregatorContract,
+				CallOpts: bind.CallOpts{Context: m.ctx},
+			}
+			roundData, err := aggregatorSession.LatestRoundData()
+			if err != nil {
+				return err
+			}
+			decimals, err := aggregatorSession.Decimals()
+			if err != nil {
+				return err
+			}
+			divisor := sdkmath.NewIntWithDecimal(1, int(decimals)) // #nosec G115
+			priceDec := sdk.NewDecFromBigInt(roundData.Answer).QuoInt(divisor)
+			// update the price
+			err = m.database.SaveBootstrapTokenPrice(t.AssetID, priceDec.String())
+			if err != nil {
+				return err
+			}
+			// calculate the total USD value of this asset
+			usdValue := operatorkeeper.CalculateUSDValue(stakingAmountInt, sdkmath.NewIntFromBigInt(roundData.Answer), uint32(t.Decimals), decimals)
+			totalTVL.AddMut(usdValue)
+		}
+	}
+
+	// save the total TVL
+	return m.database.SaveBootstrapStatistics(totalTVL.String())
 }

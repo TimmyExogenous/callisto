@@ -14,21 +14,28 @@ type BootstrapValidator struct {
 }
 
 type BootstrapClientChain struct {
-	Name             string
-	MetaInfo         string
-	LayerZeroChainID int64
-	UpdatedAt        time.Time
+	Name      string `yaml:"name"`
+	MetaInfo  string `yaml:"meta_info"`
+	LZChainID int64  `yaml:"lz_chain_id"`
 }
 
 type BootstrapToken struct {
-	AssetID            string
-	Name               string
-	Symbol             string
-	Address            string
-	Decimals           uint8
-	LayerZeroChainID   uint64
+	AssetID   string `yaml:"asset_id"`
+	Name      string `yaml:"name"`
+	Symbol    string `yaml:"symbol"`
+	Address   string `yaml:"address"`
+	Decimals  uint8  `yaml:"decimals"`
+	LZChainID uint64 `yaml:"lz_chain_id"`
+}
+type BootstrapTokenState struct {
+	BootstrapToken
 	StakingTotalAmount string
 	UpdatedAt          time.Time
+}
+
+type OracleFeed struct {
+	AssetID    string `yaml:"asset_id"`
+	OracleAddr string `yaml:"oracle_addr"` // contract address of Chainlink aggregator
 }
 
 type BootstrapStakerAsset struct {

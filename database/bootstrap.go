@@ -93,7 +93,7 @@ func (db *Db) SaveBootstrapClientChain(c *types.BootstrapClientChain) error {
 	stmt := `
 INSERT INTO bootstrap_client_chains (
     name, meta_info, layer_zero_chain_id, updated_at
-) VALUES ($1, $2, $3, $4)
+) VALUES ($1, $2, $3, now())
 ON CONFLICT (layer_zero_chain_id) DO UPDATE
 SET name       = EXCLUDED.name,
     meta_info  = EXCLUDED.meta_info,
@@ -102,8 +102,7 @@ SET name       = EXCLUDED.name,
 	_, err := db.SQL.Exec(stmt,
 		c.Name,
 		c.MetaInfo,
-		c.LayerZeroChainID,
-		c.UpdatedAt,
+		c.LZChainID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save bootstrap client chain: %w", err)
@@ -111,7 +110,7 @@ SET name       = EXCLUDED.name,
 	return nil
 }
 
-func (db *Db) SaveBootstrapToken(t *types.BootstrapToken) error {
+func (db *Db) SaveBootstrapToken(t *types.BootstrapTokenState) error {
 	stmt := `
 INSERT INTO bootstrap_tokens (
     asset_id, name, symbol, address, decimals,
@@ -132,7 +131,7 @@ SET name                 = EXCLUDED.name,
 		t.Symbol,
 		t.Address,
 		t.Decimals,
-		t.LayerZeroChainID,
+		t.LZChainID,
 		t.StakingTotalAmount,
 		t.UpdatedAt,
 	)
@@ -140,6 +139,44 @@ SET name                 = EXCLUDED.name,
 		return fmt.Errorf("failed to save bootstrap token: %w", err)
 	}
 	return nil
+}
+
+func (db *Db) ListBootstrapTokens() ([]*types.BootstrapTokenState, error) {
+	stmt := `
+SELECT asset_id, name, symbol, address, decimals,
+       layer_zero_chain_id, staking_total_amount, updated_at
+FROM bootstrap_tokens;`
+
+	rows, err := db.SQL.Query(stmt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query bootstrap tokens: %w", err)
+	}
+	defer rows.Close()
+
+	var tokens []*types.BootstrapTokenState
+	for rows.Next() {
+		t := new(types.BootstrapTokenState)
+		err := rows.Scan(
+			&t.AssetID,
+			&t.Name,
+			&t.Symbol,
+			&t.Address,
+			&t.Decimals,
+			&t.LZChainID,
+			&t.StakingTotalAmount,
+			&t.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan bootstrap token: %w", err)
+		}
+		tokens = append(tokens, t)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration error: %w", err)
+	}
+
+	return tokens, nil
 }
 
 func (db *Db) UpdateBootstrapTokenDepositAmount(assetID string, amount string) error {
@@ -343,4 +380,41 @@ SELECT EXISTS (
 		return false, fmt.Errorf("failed to check bootstrap operator asset existence: %w", err)
 	}
 	return exists, nil
+}
+
+func (db *Db) SaveBootstrapTokenPrice(assetID string, price string) error {
+	stmt := `
+INSERT INTO bootstrap_token_prices (asset_id, price, updated_at)
+VALUES ($1, $2, now())
+ON CONFLICT (asset_id) DO UPDATE
+SET price      = EXCLUDED.price,
+    updated_at = EXCLUDED.updated_at;
+`
+
+	_, err := db.SQL.Exec(stmt,
+		assetID,
+		price,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save bootstrap token price: %w", err)
+	}
+	return nil
+}
+
+func (db *Db) SaveBootstrapStatistics(tvl string) error {
+	stmt := `
+INSERT INTO bootstrap_statistics (one_row_id, tvl, updated_at)
+VALUES (TRUE, $1, now())
+ON CONFLICT (one_row_id) DO UPDATE
+SET tvl        = EXCLUDED.tvl,
+    updated_at = EXCLUDED.updated_at;
+`
+
+	_, err := db.SQL.Exec(stmt,
+		tvl,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save bootstrap statistics: %w", err)
+	}
+	return nil
 }
