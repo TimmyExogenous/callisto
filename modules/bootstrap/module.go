@@ -3,7 +3,9 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"github.com/xrpscan/xrpl-go"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -12,6 +14,7 @@ import (
 	callistodb "github.com/forbole/callisto/v4/database"
 	"github.com/forbole/callisto/v4/modules/bootstrap/bootstrap_binding"
 	"github.com/forbole/callisto/v4/modules/bootstrap/storage_binding"
+	"github.com/forbole/callisto/v4/types"
 	"github.com/forbole/juno/v5/types/config"
 
 	"github.com/forbole/juno/v5/modules"
@@ -26,6 +29,7 @@ type Module struct {
 	database      *callistodb.Db
 	EthHttpClient *ethclient.Client
 	EthWSClient   *ethclient.Client
+	XrpClient     *xrpl.Client
 	Config        Config
 	BootstrapAddr common.Address
 	// No dedicated clients for BTC and XRP, since we may call their RPCs
@@ -73,6 +77,12 @@ func NewModule(
 	}
 	ethWSClient := ethclient.NewClient(websocketRC)
 
+	xrpClient := xrpl.NewClient(xrpl.ClientConfig{URL: bootstrapCfg.XRPRPC})
+	err = xrpClient.Ping([]byte("PING"))
+	if err != nil {
+		panic(fmt.Errorf("failed to ping XRP client at %s: %w", bootstrapCfg.XRPRPC, err))
+	}
+
 	// create the sessions for bootstrap and storage contracts.
 	ctx := context.Background()
 	bootstrapCaller, err := bootstrap_binding.NewBootstrapCaller(bootstrapAddr, ethHttpClient)
@@ -106,6 +116,7 @@ func NewModule(
 		database:           database,
 		EthHttpClient:      ethHttpClient,
 		EthWSClient:        ethWSClient,
+		XrpClient:          xrpClient,
 		Config:             *bootstrapCfg,
 		BootstrapAddr:      bootstrapAddr,
 		ctx:                ctx,
@@ -121,6 +132,11 @@ func NewModule(
 	// Initialize address bindings from database
 	if err := module.loadExistingBindings(); err != nil {
 		panic(fmt.Errorf("failed to load existing address bindings: %w", err))
+	}
+
+	// Initialize bootstrap tokens for BTC and XRP if not exists
+	if err := module.initializeBootstrapTokens(); err != nil {
+		panic(fmt.Errorf("failed to initialize bootstrap tokens: %w", err))
 	}
 
 	return module
@@ -156,6 +172,67 @@ func (m *Module) loadExistingBindings() error {
 		m.xrpAddressMappings[binding.SourceAddr] = binding.TargetAddr
 	}
 	m.xrpMappingMutex.Unlock()
+
+	return nil
+}
+
+// initializeBootstrapTokens initializes bootstrap client chains and tokens if they don't exist
+func (m *Module) initializeBootstrapTokens() error {
+	// Define bootstrap client chains for BTC and XRP
+	clientChains := []types.BootstrapClientChain{
+		{
+			Name:             "Bitcoin",
+			MetaInfo:         `{"native_currency":"BTC","decimals":8}`,
+			LayerZeroChainID: 1, // BTC LayerZero chain ID
+			UpdatedAt:        time.Now(),
+		},
+		{
+			Name:             "XRP",
+			MetaInfo:         `{"native_currency":"XRP","decimals":6}`,
+			LayerZeroChainID: 2, // XRP LayerZero chain ID
+			UpdatedAt:        time.Now(),
+		},
+	}
+
+	// Save client chains first
+	for _, chain := range clientChains {
+		err := m.database.SaveBootstrapClientChain(&chain)
+		if err != nil {
+			return fmt.Errorf("failed to save bootstrap client chain %s: %w", chain.Name, err)
+		}
+	}
+
+	// Define bootstrap tokens for BTC and XRP
+	tokens := []types.BootstrapToken{
+		{
+			AssetID:            VirtualAddress + "_0x1", // BTC
+			Name:               "Bitcoin",
+			Symbol:             "BTC",
+			Address:            "0x0000000000000000000000000000000000000000", // Placeholder address for BTC
+			Decimals:           8,                                            // BTC has 8 decimal places (satoshis)
+			LayerZeroChainID:   1,                                            // BTC chain ID = 1
+			StakingTotalAmount: "0",
+			UpdatedAt:          time.Now(),
+		},
+		{
+			AssetID:            VirtualAddress + "_0x2", // XRP
+			Name:               "XRP",
+			Symbol:             "XRP",
+			Address:            "0x0000000000000000000000000000000000000000", // Placeholder address for XRP
+			Decimals:           6,                                            // XRP has 6 decimal places (drops)
+			LayerZeroChainID:   2,                                            // XRP chain ID = 2
+			StakingTotalAmount: "0",
+			UpdatedAt:          time.Now(),
+		},
+	}
+
+	// Save each token if it doesn't exist
+	for _, token := range tokens {
+		err := m.database.SaveBootstrapToken(&token)
+		if err != nil {
+			return fmt.Errorf("failed to save bootstrap token %s: %w", token.Symbol, err)
+		}
+	}
 
 	return nil
 }

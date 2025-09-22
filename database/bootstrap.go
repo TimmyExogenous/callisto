@@ -358,52 +358,7 @@ func (db *Db) MarkTransactionProcessed(chainType, txHash string, blockHeight int
 	return nil
 }
 
-// CleanupOldProcessedTransactions removes old processed transaction records
-func (db *Db) CleanupOldProcessedTransactions(chainType string, olderThanDays int) error {
-	stmt := `DELETE FROM bootstrap_processed_transactions
-             WHERE chain_type = $1 AND processed_at < NOW() - INTERVAL '%d days'`
-
-	_, err := db.SQL.Exec(fmt.Sprintf(stmt, olderThanDays), chainType)
-	if err != nil {
-		return fmt.Errorf("failed to cleanup old processed transactions: %w", err)
-	}
-
-	return nil
-}
-
-// GetProcessedTransactionsByHeight retrieves processed transactions for a specific height range
-func (db *Db) GetProcessedTransactionsByHeight(chainType string, fromHeight, toHeight int64) ([]types.ProcessedTransaction, error) {
-	stmt := `SELECT chain_type, tx_hash, block_height, processed_at
-             FROM bootstrap_processed_transactions
-             WHERE chain_type = $1 AND block_height BETWEEN $2 AND $3
-             ORDER BY block_height, processed_at`
-
-	rows, err := db.SQL.Query(stmt, chainType, fromHeight, toHeight)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get processed transactions: %w", err)
-	}
-	defer rows.Close()
-
-	var transactions []types.ProcessedTransaction
-	for rows.Next() {
-		var tx types.ProcessedTransaction
-		err := rows.Scan(
-			&tx.ChainType,
-			&tx.TxHash,
-			&tx.BlockHeight,
-			&tx.ProcessedAt,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan processed transaction: %w", err)
-		}
-		transactions = append(transactions, tx)
-	}
-
-	return transactions, nil
-}
-
 // Address binding management functions
-
 // GetAddressBindings retrieves all address bindings for a specific chain type
 func (db *Db) GetAddressBindings(chainType string) ([]types.AddressBinding, error) {
 	stmt := `SELECT chain_type, source_addr, target_addr, created_at, updated_at
@@ -572,4 +527,24 @@ ON CONFLICT (chain_type, tx_hash) DO NOTHING`
 	}
 
 	return nil
+}
+
+// GetLastProcessedTransaction gets the last processed transaction ID for a specific chain type
+// Used for pagination when fetching transactions from address API
+func (db *Db) GetLastProcessedTransaction(chainType string) (string, error) {
+	stmt := `SELECT tx_hash FROM bootstrap_processed_transactions
+             WHERE chain_type = $1
+             ORDER BY block_height DESC, processed_at DESC
+             LIMIT 1`
+
+	var txHash string
+	err := db.SQL.QueryRow(stmt, chainType).Scan(&txHash)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil // No transactions processed yet, return empty string
+		}
+		return "", fmt.Errorf("failed to get last processed transaction for %s: %w", chainType, err)
+	}
+
+	return txHash, nil
 }

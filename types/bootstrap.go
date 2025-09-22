@@ -61,13 +61,18 @@ type BootstrapOperatorAsset struct {
 
 // BTC transaction related types
 type BTCTx struct {
-	TxID        string    `json:"txid"`
-	BlockHeight int64     `json:"status.block_height"`
-	BlockTime   int64     `json:"status.block_time"`
-	TxIndex     int64     `json:"status.tx_index"`
-	Confirmed   bool      `json:"status.confirmed"`
-	Vin         []BTCVin  `json:"vin"`
-	Vout        []BTCVout `json:"vout"`
+	TxID    string    `json:"txid"`
+	Status  BTCStatus `json:"status"`
+	Vin     []BTCVin  `json:"vin"`
+	Vout    []BTCVout `json:"vout"`
+	TxIndex int64     // Transaction index within block (filled when needed)
+}
+
+type BTCStatus struct {
+	Confirmed   bool   `json:"confirmed"`
+	BlockHeight int64  `json:"block_height"`
+	BlockHash   string `json:"block_hash"`
+	BlockTime   int64  `json:"block_time"`
 }
 
 type BTCVin struct {
@@ -169,14 +174,6 @@ type TransactionBatch struct {
 	CreatedAt    time.Time `db:"created_at"`
 	UpdatedAt    time.Time `db:"updated_at"`
 }
-
-// Batch processing states
-const (
-	BatchStatusPending    = "pending"
-	BatchStatusProcessing = "processing"
-	BatchStatusCompleted  = "completed"
-	BatchStatusFailed     = "failed"
-)
 
 // Transaction retry configuration
 type RetryConfig struct {

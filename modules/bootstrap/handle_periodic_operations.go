@@ -1,7 +1,6 @@
 package bootstrap
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/hex"
@@ -25,9 +24,8 @@ import (
 func (m *Module) RegisterPeriodicOperations(scheduler *gocron.Scheduler) error {
 	log.Debug().Str("module", "bootstrap").Msg("setting up periodic tasks")
 
-	// Schedule a cron job to run.
-	if _, err := scheduler.Every(m.Config.UpdateInterval).Minutes().Do(func() {
-		m.refetchBootstrapStates()
+	if _, err := scheduler.Every(int(m.Config.UpdateInterval)).Minutes().Do(func() {
+		m.refetchBootstrapStatesSequential()
 	}); err != nil {
 		return fmt.Errorf("error while setting up daily refetch periodic operation: %s", err)
 	}
@@ -76,7 +74,6 @@ func (m *Module) refetchETHStates() error {
 }
 
 // Helper functions for safe data parsing and validation
-
 // safeStringExtract safely extracts string value from map
 func safeStringExtract(data map[string]interface{}, key string) (string, error) {
 	value, exists := data[key]
@@ -88,24 +85,6 @@ func safeStringExtract(data map[string]interface{}, key string) (string, error) 
 		return "", fmt.Errorf("invalid type for key %s: expected string, got %T", key, value)
 	}
 	return str, nil
-}
-
-// safeInt64Extract safely extracts int64 value from map
-func safeInt64Extract(data map[string]interface{}, key string) (int64, error) {
-	value, exists := data[key]
-	if !exists {
-		return 0, fmt.Errorf("missing key: %s", key)
-	}
-	switch v := value.(type) {
-	case float64:
-		return int64(v), nil
-	case int64:
-		return v, nil
-	case int:
-		return int64(v), nil
-	default:
-		return 0, fmt.Errorf("invalid type for key %s: expected number, got %T", key, value)
-	}
 }
 
 // validateBTCAddressBinding validates and stores BTC address binding with database persistence
@@ -346,8 +325,8 @@ func isRetryableDatabaseError(err error) bool {
 // sortBTCTransactions sorts BTC transactions by block height and transaction index
 func sortBTCTransactions(txs []types.BTCTx) {
 	sort.Slice(txs, func(i, j int) bool {
-		if txs[i].BlockHeight != txs[j].BlockHeight {
-			return txs[i].BlockHeight < txs[j].BlockHeight
+		if txs[i].Status.BlockHeight != txs[j].Status.BlockHeight {
+			return txs[i].Status.BlockHeight < txs[j].Status.BlockHeight
 		}
 		// Use TxID for deterministic order if same block
 		return txs[i].TxID < txs[j].TxID
@@ -365,85 +344,64 @@ func sortXRPTransactions(txs []types.XRPTransaction) {
 }
 
 // BTC vault transaction fetching and processing
-
 func (m *Module) refetchBTCStates() error {
+	//TODO: test
+	return nil
+
 	log.Debug().Str("module", "bootstrap").Str("refetching", "BTC states").
 		Msg("refetching BTC states")
 
-	if m.Config.BTCVaultAddr == "" {
-		log.Debug().Str("module", "bootstrap").Msg("BTC vault address not configured, skipping")
-		return nil
-	}
-
-	// Get current block height
+	// Get current block height for confirmation calculations
 	currentHeight, err := m.getBTCCurrentBlockHeight()
 	if err != nil {
-		return fmt.Errorf("error getting current BTC block height: %s", err)
+		return fmt.Errorf("error getting current BTC block height: %w", err)
 	}
 
-	// Get or initialize scan state
-	scanState, err := m.database.GetScanState("BTC")
+	log.Info().Int64("current_height", currentHeight).
+		Int("min_confirmations", m.Config.BTCMinConfirmations).
+		Msg("starting BTC deposit transaction processing")
+
+	// Get all transactions from vault address (matches TypeScript getNewerConfirmedTxs logic)
+	transactions, err := m.getConfirmedVaultTransactions()
 	if err != nil {
-		// First time scanning, initialize with start height
-		startHeight := m.Config.BTCStartHeight
-		if startHeight == 0 {
-			// Start from current height minus confirmation depth for safety
-			startHeight = currentHeight - int64(m.Config.BTCMinConfirmations)
-			if startHeight < 0 {
-				startHeight = 0
-			}
-		}
-
-		scanState = &types.ScanState{
-			ChainType:  "BTC",
-			LastHeight: startHeight,
-			SafeHeight: startHeight,
-			UpdatedAt:  time.Now(),
-		}
-
-		log.Info().Int64("start_height", startHeight).Msg("initializing BTC scan state")
-		if err := m.database.UpdateScanState(scanState); err != nil {
-			return fmt.Errorf("failed to initialize BTC scan state: %s", err)
-		}
+		return fmt.Errorf("error getting BTC vault transactions: %w", err)
 	}
 
-	// Calculate safe current height (with confirmation buffer)
-	safeCurrentHeight := currentHeight - int64(m.Config.BTCMinConfirmations)
-	if safeCurrentHeight <= scanState.SafeHeight {
-		log.Debug().Int64("safe_height", safeCurrentHeight).Int64("last_safe", scanState.SafeHeight).
-			Msg("no new confirmed BTC blocks to scan")
+	if len(transactions) == 0 {
+		log.Info().Msg("no transactions found for vault address")
 		return nil
 	}
 
-	log.Info().Int64("from_height", scanState.SafeHeight).Int64("to_height", safeCurrentHeight).
-		Msg("starting incremental BTC scan")
+	log.Info().Int("total_transactions", len(transactions)).
+		Msg("fetched transactions from vault address")
 
-	// Get transactions for height range (incremental scan)
-	transactions, err := m.getBTCVaultTransactionsFromHeight(scanState.SafeHeight+1, safeCurrentHeight)
-	if err != nil {
-		return fmt.Errorf("error getting BTC vault transactions from height %d to %d: %s",
-			scanState.SafeHeight+1, safeCurrentHeight, err)
+	// Filter transactions with sufficient confirmations (matches TypeScript safelyFinalizedTxs logic)
+	safelyFinalizedTxs := m.filterSafelyFinalizedTransactions(transactions, currentHeight)
+	if len(safelyFinalizedTxs) == 0 {
+		log.Info().Msg("no transactions with enough confirmations found")
+		return nil
 	}
 
-	// Sort transactions by block height and order for consistent processing
-	sortBTCTransactions(transactions)
+	// Sort by block height and tx index (matches TypeScript sorting logic)
+	sortBTCTransactions(safelyFinalizedTxs)
+
+	log.Info().Int("safely_finalized_txs", len(safelyFinalizedTxs)).
+		Msg("filtered transactions with sufficient confirmations")
 
 	processedCount := 0
-	duplicateCount := 0
+	skippedCount := 0
 
-	// Process transactions with address binding validation and deduplication
-	for _, tx := range transactions {
-		// Check if transaction already processed
-		if processed, err := m.database.IsTransactionProcessed("BTC", tx.TxID); err != nil {
-			log.Err(err).Str("txid", tx.TxID).Msg("error checking if BTC transaction is processed")
-			continue
-		} else if processed {
-			duplicateCount++
-			log.Debug().Str("txid", tx.TxID).Msg("BTC transaction already processed, skipping")
+	// Process transactions sequentially (matches TypeScript processing loop)
+	for _, tx := range safelyFinalizedTxs {
+		// Validate transaction and parse OP_RETURN data in one step (matches TypeScript logic)
+		opReturnData := m.isValidDepositTransaction(tx)
+		if opReturnData == nil {
+			skippedCount++
 			continue
 		}
 
-		if err := m.processBTCTxWithTransaction(tx, currentHeight); err != nil {
+		// Process transaction (matches TypeScript saveCrossChainTx logic)
+		if err := m.processBTCTxWithTransactionAndData(tx, currentHeight, opReturnData); err != nil {
 			log.Err(err).Str("txid", tx.TxID).Msg("error processing BTC transaction")
 			continue
 		}
@@ -451,36 +409,243 @@ func (m *Module) refetchBTCStates() error {
 		processedCount++
 	}
 
-	// Log processing statistics
-	totalTxs := len(transactions)
-	duplicateRate := float64(duplicateCount) / float64(totalTxs) * 100
+	// Log processing statistics (matches TypeScript logging)
 	log.Info().
-		Int("total_txs", totalTxs).
+		Int("total_transactions", len(transactions)).
+		Int("safely_finalized", len(safelyFinalizedTxs)).
 		Int("processed", processedCount).
-		Int("duplicates", duplicateCount).
-		Float64("duplicate_rate_percent", duplicateRate).
-		Int64("from_height", scanState.SafeHeight).
-		Int64("to_height", safeCurrentHeight).
-		Msg("BTC transaction processing statistics")
-
-	// Update scan state
-	newScanState := &types.ScanState{
-		ChainType:  "BTC",
-		LastHeight: currentHeight,
-		SafeHeight: safeCurrentHeight,
-		UpdatedAt:  time.Now(),
-	}
-
-	if err := m.database.UpdateScanState(newScanState); err != nil {
-		return fmt.Errorf("failed to update BTC scan state: %s", err)
-	}
-
-	log.Info().Int("processed_count", processedCount).
-		Int64("from_height", scanState.SafeHeight).
-		Int64("to_height", safeCurrentHeight).
-		Msg("completed incremental BTC scan")
+		Int("skipped", skippedCount).
+		Int64("block_height_tip", currentHeight).
+		Msg("BTC deposit transaction processing completed")
 
 	return nil
+}
+
+// filterSafelyFinalizedTransactions filters transactions with sufficient confirmations
+// Matches TypeScript safelyFinalizedTxs filtering logic
+func (m *Module) filterSafelyFinalizedTransactions(transactions []types.BTCTx, currentHeight int64) []types.BTCTx {
+	var safelyFinalized []types.BTCTx
+
+	for _, tx := range transactions {
+		// Check if transaction has sufficient confirmations
+		if tx.Status.BlockHeight <= currentHeight &&
+			currentHeight-tx.Status.BlockHeight+1 >= int64(m.Config.BTCMinConfirmations) {
+			safelyFinalized = append(safelyFinalized, tx)
+		}
+	}
+
+	return safelyFinalized
+}
+
+// normalizeAddress normalizes an address by trimming spaces and converting to lowercase
+func normalizeAddress(addr string) string {
+	return strings.ToLower(strings.TrimSpace(addr))
+}
+
+// isValidDepositTransaction validates transaction format and parses OP_RETURN data
+// Matches TypeScript isValidDepositTransaction logic
+// Note: Confirmation checks are handled by filterSafelyFinalizedTransactions
+func (m *Module) isValidDepositTransaction(tx types.BTCTx) *BTCOPReturnData {
+	vaultAddr := normalizeAddress(m.Config.BTCVaultAddr)
+
+	// Transaction is already confirmed and finalized by filterSafelyFinalizedTransactions
+
+	// Check if it's from vault (should not be) - matches TypeScript isFromVault check
+	isFromVault := false
+	for _, vin := range tx.Vin {
+		if normalizeAddress(vin.Prevout.ScriptPubKeyAddr) == vaultAddr {
+			isFromVault = true
+			break
+		}
+	}
+	if isFromVault {
+		return nil
+	}
+
+	// Check if there's exactly one output to vault with minimum amount - matches TypeScript vaultOutputs check
+	vaultOutputCount := 0
+	for _, vout := range tx.Vout {
+		if normalizeAddress(vout.ScriptPubKeyAddr) == vaultAddr &&
+			vout.Value >= int64(m.Config.BTCMinAmount) {
+			vaultOutputCount++
+		}
+	}
+	if vaultOutputCount != 1 {
+		return nil
+	}
+
+	// Check if there's exactly one OP_RETURN output - matches TypeScript opReturnOutputs check
+	var opReturnOutput *types.BTCVout
+	opReturnCount := 0
+	for i, vout := range tx.Vout {
+		if vout.ScriptPubKeyType == "op_return" {
+			opReturnCount++
+			if opReturnCount > 1 {
+				break // Found multiple OP_RETURN outputs, exit early
+			}
+			// Use index instead of pointer to avoid address reuse issues
+			opReturnOutput = &tx.Vout[i]
+		}
+	}
+	if opReturnCount != 1 {
+		return nil
+	}
+
+	// Parse OP_RETURN data inline (matches TypeScript parseOpReturnDataInline)
+	opReturnData := m.parseOpReturnDataInline(opReturnOutput.ScriptPubKey, tx.TxID)
+	if opReturnData == nil {
+		return nil
+	}
+
+	// Convert to BTCOPReturnData format
+	result := &BTCOPReturnData{
+		ImuachainAddress: opReturnData.ImuachainAddressHex,
+		ValidatorAddress: opReturnData.ValidatorAddress,
+	}
+
+	return result
+}
+
+// isValidValidatorAddress validates if a string is a valid validator address (bech32 format with 'im' prefix)
+func (m *Module) isValidValidatorAddress(address string) bool {
+	// Basic format check: should start with 'im1' and have appropriate length
+	if !strings.HasPrefix(address, "im1") || len(address) < 10 {
+		return false
+	}
+
+	// Check if it contains only alphanumeric characters (basic bech32 validation)
+	for _, char := range address {
+		if !((char >= 'a' && char <= 'z') || (char >= '0' && char <= '9')) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// OpReturnData represents parsed OP_RETURN data (internal struct for parsing)
+type OpReturnData struct {
+	ImuachainAddressHex string
+	ValidatorAddress    string
+}
+
+// parseOpReturnDataInline parses and validates OP_RETURN data from Bitcoin transaction output
+// Compatible with both formats:
+// 1. Original format: 6a14{20 bytes imuachain} (only imua address)
+// 2. Extended format: 6a3d{20 bytes imuachain}{41 bytes validator} (imua + validator addresses)
+func (m *Module) parseOpReturnDataInline(scriptPubKey, txid string) *OpReturnData {
+	// Check if it starts with OP_RETURN prefix
+	if !strings.HasPrefix(scriptPubKey, "6a") {
+		return nil
+	}
+
+	// Extract length byte and data
+	if len(scriptPubKey) < 6 {
+		return nil
+	}
+
+	lengthHex := scriptPubKey[2:4]
+	length, err := strconv.ParseInt(lengthHex, 16, 64)
+	if err != nil {
+		return nil
+	}
+
+	hexOpReturnData := scriptPubKey[4:]
+
+	// Validate data length matches declared length
+	if len(hexOpReturnData) != int(length)*2 {
+		return nil
+	}
+
+	// Handle different formats based on data length
+	if length == 20 {
+		// Original format: only IMUA address (20 bytes)
+		imuachainAddressHex := strings.ToLower("0x" + hexOpReturnData)
+
+		// Validate IMUA address format (basic hex validation)
+		if !isValidEthereumAddress(imuachainAddressHex) {
+			return nil
+		}
+
+		return &OpReturnData{
+			ImuachainAddressHex: imuachainAddressHex,
+			ValidatorAddress:    "", // Empty string when no validator address
+		}
+	} else if length == 61 {
+		// Extended format: IMUA address (20 bytes) + validator address (41 bytes)
+		imuachainAddressHex := strings.ToLower("0x" + hexOpReturnData[:40])
+
+		// Validate IMUA address format
+		if !isValidEthereumAddress(imuachainAddressHex) {
+			return nil
+		}
+
+		validatorAddressHex := hexOpReturnData[40:]
+
+		// Decode validator address from hex
+		validatorBytes, err := hex.DecodeString(validatorAddressHex)
+		if err != nil {
+			return &OpReturnData{
+				ImuachainAddressHex: imuachainAddressHex,
+				ValidatorAddress:    "",
+			}
+		}
+
+		// Check if the bytes contain only printable ASCII characters (bech32 addresses should be ASCII)
+		for _, b := range validatorBytes {
+			if b < 32 || b > 126 {
+				return &OpReturnData{
+					ImuachainAddressHex: imuachainAddressHex,
+					ValidatorAddress:    "",
+				}
+			}
+		}
+
+		validatorAddress := string(validatorBytes)
+
+		// Additional format validation - bech32 addresses should only contain alphanumeric characters
+		for _, char := range validatorAddress {
+			if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9')) {
+				return &OpReturnData{
+					ImuachainAddressHex: imuachainAddressHex,
+					ValidatorAddress:    "",
+				}
+			}
+		}
+
+		// Validate the validator address format (should be bech32 with 'im' prefix)
+		if !m.isValidValidatorAddress(validatorAddress) {
+			// Return with empty validator address when invalid
+			return &OpReturnData{
+				ImuachainAddressHex: imuachainAddressHex,
+				ValidatorAddress:    "",
+			}
+		}
+
+		return &OpReturnData{
+			ImuachainAddressHex: imuachainAddressHex,
+			ValidatorAddress:    validatorAddress,
+		}
+	} else {
+		// Unsupported format
+		return nil
+	}
+}
+
+// isValidEthereumAddress validates if a string is a valid Ethereum address format
+func isValidEthereumAddress(address string) bool {
+	if len(address) != 42 {
+		return false
+	}
+	if !strings.HasPrefix(address, "0x") {
+		return false
+	}
+	for _, char := range address[2:] {
+		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F')) {
+			return false
+		}
+	}
+	return true
 }
 
 // getBTCCurrentBlockHeight gets the current BTC block height from Esplora API
@@ -523,136 +688,173 @@ func (m *Module) getBTCCurrentBlockHeight() (int64, error) {
 	return height, nil
 }
 
-// getBTCVaultTransactionsFromHeight gets BTC vault transactions from a specific height range
-func (m *Module) getBTCVaultTransactionsFromHeight(fromHeight, toHeight int64) ([]types.BTCTx, error) {
+// getConfirmedVaultTransactions replicates the TypeScript getConfirmedTransactions logic
+// Gets the last processed transaction ID from database for pagination
+func (m *Module) getConfirmedVaultTransactions() ([]types.BTCTx, error) {
 	var allTxs []types.BTCTx
+
+	// Get the last processed transaction ID from database for pagination start point
+	startFromTxID, err := m.database.GetLastProcessedTransaction("BTC")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get last processed transaction: %w", err)
+	}
 
 	// Create HTTP client with timeout
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 	}
 
-	// Process blocks in batches to avoid overwhelming the API
-	batchSize := int64(m.Config.ScanBatchSize)
-	if batchSize <= 0 {
-		batchSize = 10 // Default batch size
+	vaultAddress := normalizeAddress(m.Config.BTCVaultAddr)
+	lastSeenTxID := startFromTxID // Use as pagination cursor
+	pageCount := 0
+
+	log.Info().Str("vault_address", vaultAddress).
+		Str("start_from_txid", startFromTxID).
+		Msg("starting BTC vault transaction fetch")
+
+	for {
+		// Build URL - matches TypeScript logic exactly
+		var url string
+		if lastSeenTxID != "" {
+			url = fmt.Sprintf("%s/api/address/%s/txs/chain/%s", m.Config.BTCRPC, vaultAddress, lastSeenTxID)
+		} else {
+			url = fmt.Sprintf("%s/api/address/%s/txs", m.Config.BTCRPC, vaultAddress)
+		}
+
+		// Make HTTP request
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			cancel()
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			cancel()
+			return nil, fmt.Errorf("failed to fetch transactions: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			cancel()
+			return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
+		}
+
+		var txs []types.BTCTx
+		err = json.NewDecoder(resp.Body).Decode(&txs)
+		resp.Body.Close()
+		cancel()
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode transactions: %w", err)
+		}
+
+		// Break if no more transactions (matches TypeScript logic)
+		if len(txs) == 0 {
+			break
+		}
+
+		pageCount++
+		confirmedInPage := 0
+
+		// Filter confirmed transactions and add transaction index (matches TypeScript logic)
+		for _, tx := range txs {
+			if tx.Status.Confirmed {
+				// Set transaction index - will be filled by getTxIndexInBlock when needed
+				// We defer the expensive API call until the transaction is actually processed
+				tx.TxIndex = 0 // Will be set during processing if needed
+				allTxs = append(allTxs, tx)
+				confirmedInPage++
+			}
+		}
+
+		// Log progress for long operations
+		if pageCount%10 == 0 {
+			log.Info().Int("pages_fetched", pageCount).
+				Int("confirmed_in_page", confirmedInPage).
+				Int("total_confirmed", len(allTxs)).
+				Msg("BTC transaction fetch progress")
+		}
+
+		// Set lastSeenTxID for pagination (matches TypeScript logic)
+		lastSeenTxID = txs[len(txs)-1].TxID
 	}
 
-	for currentHeight := fromHeight; currentHeight <= toHeight; currentHeight += batchSize {
-		endHeight := currentHeight + batchSize - 1
-		if endHeight > toHeight {
-			endHeight = toHeight
-		}
-
-		log.Debug().Int64("from", currentHeight).Int64("to", endHeight).
-			Msg("scanning BTC blocks for vault transactions")
-
-		// Get transactions for each block in the range
-		for blockHeight := currentHeight; blockHeight <= endHeight; blockHeight++ {
-			blockTxs, err := m.getBTCBlockTransactions(client, blockHeight)
-			if err != nil {
-				log.Err(err).Int64("height", blockHeight).Msg("error getting BTC block transactions")
-				continue
-			}
-
-			// Filter transactions involving vault address
-			for _, tx := range blockTxs {
-				if m.isBTCVaultTransaction(tx) {
-					allTxs = append(allTxs, tx)
-				}
-			}
-		}
-
-		// Add delay between batches to be API-friendly
-		if endHeight < toHeight {
-			time.Sleep(100 * time.Millisecond)
-		}
-	}
-
-	log.Info().Int("total_txs", len(allTxs)).
-		Int64("from_height", fromHeight).
-		Int64("to_height", toHeight).
-		Msg("completed BTC vault transaction scanning")
+	log.Info().Int("total_confirmed_txs", len(allTxs)).
+		Int("pages_fetched", pageCount).
+		Msg("completed BTC vault transaction fetching")
 
 	return allTxs, nil
 }
 
-// getBTCBlockTransactions gets all transactions for a specific block height
-func (m *Module) getBTCBlockTransactions(client *http.Client, blockHeight int64) ([]types.BTCTx, error) {
-	// First get block hash
-	url := fmt.Sprintf("%s/api/block-height/%d", m.Config.BTCRPC, blockHeight)
+// getTxIndexInBlock gets the transaction index within its block (matches TypeScript logic)
+func (m *Module) getTxIndexInBlock(client *http.Client, txID string) (int64, error) {
+	// First get transaction details to get block hash
+	url := fmt.Sprintf("%s/api/tx/%s", m.Config.BTCRPC, txID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create block hash request: %s", err)
+		return 0, fmt.Errorf("failed to create tx request: %s", err)
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get block hash: %s", err)
+		return 0, fmt.Errorf("failed to get transaction: %s", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API returned status %d for block height %d", resp.StatusCode, blockHeight)
+		return 0, fmt.Errorf("API returned status %d for tx %s", resp.StatusCode, txID)
 	}
 
-	var blockHash string
-	if err := json.NewDecoder(resp.Body).Decode(&blockHash); err != nil {
-		return nil, fmt.Errorf("failed to decode block hash: %s", err)
+	var txResponse struct {
+		Status struct {
+			BlockHash string `json:"block_hash"`
+		} `json:"status"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&txResponse); err != nil {
+		return 0, fmt.Errorf("failed to decode tx response: %s", err)
 	}
 
-	// Then get block transactions
-	url = fmt.Sprintf("%s/api/block/%s/txs", m.Config.BTCRPC, blockHash)
+	// Then get block transaction IDs
+	blockHash := txResponse.Status.BlockHash
+	url = fmt.Sprintf("%s/api/block/%s/txids", m.Config.BTCRPC, blockHash)
 
-	ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	req, err = http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create block txs request: %s", err)
+		return 0, fmt.Errorf("failed to create block txids request: %s", err)
 	}
 
 	resp, err = client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get block transactions: %s", err)
+		return 0, fmt.Errorf("failed to get block txids: %s", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API returned status %d for block %s", resp.StatusCode, blockHash)
+		return 0, fmt.Errorf("API returned status %d for block %s", resp.StatusCode, blockHash)
 	}
 
-	var txs []types.BTCTx
-	if err := json.NewDecoder(resp.Body).Decode(&txs); err != nil {
-		return nil, fmt.Errorf("failed to decode block transactions: %s", err)
+	var txids []string
+	if err := json.NewDecoder(resp.Body).Decode(&txids); err != nil {
+		return 0, fmt.Errorf("failed to decode txids: %s", err)
 	}
 
-	return txs, nil
-}
-
-// isBTCVaultTransaction checks if a transaction involves the vault address
-func (m *Module) isBTCVaultTransaction(tx types.BTCTx) bool {
-	vaultAddr := strings.ToLower(strings.TrimSpace(m.Config.BTCVaultAddr))
-
-	// Check if any output goes to vault address
-	for _, vout := range tx.Vout {
-		if strings.ToLower(strings.TrimSpace(vout.ScriptPubKeyAddr)) == vaultAddr {
-			return true
+	// Find transaction index
+	for i, id := range txids {
+		if id == txID {
+			return int64(i), nil
 		}
 	}
 
-	// Check if any input comes from vault address
-	for _, vin := range tx.Vin {
-		if strings.ToLower(strings.TrimSpace(vin.Prevout.ScriptPubKeyAddr)) == vaultAddr {
-			return true
-		}
-	}
-
-	return false
+	return 0, fmt.Errorf("transaction %s not found in block %s", txID, blockHash)
 }
 
 // processBTCTxWithTransaction processes a single BTC transaction within a database transaction
@@ -663,11 +865,11 @@ func (m *Module) processBTCTxWithTransaction(tx types.BTCTx, currentHeight int64
 		return m.database.WithTransaction(func(dbTx *sql.Tx) error {
 			// 1. Validate transaction first (no database writes)
 			// Check confirmations
-			if !tx.Confirmed || tx.BlockHeight <= 0 {
+			if !tx.Status.Confirmed || tx.Status.BlockHeight <= 0 {
 				return nil // Skip unconfirmed transactions
 			}
 
-			confirmations := currentHeight - tx.BlockHeight + 1
+			confirmations := currentHeight - tx.Status.BlockHeight + 1
 			if confirmations < int64(m.Config.BTCMinConfirmations) {
 				return nil // Not enough confirmations
 			}
@@ -689,7 +891,30 @@ func (m *Module) processBTCTxWithTransaction(tx types.BTCTx, currentHeight int64
 
 			// 3. Mark as processed last (atomicity guarantee)
 			// Note: ON CONFLICT DO NOTHING in the database handles concurrent processing
-			if err := m.database.MarkTransactionProcessedInTx(dbTx, "BTC", tx.TxID, tx.BlockHeight); err != nil {
+			if err := m.database.MarkTransactionProcessedInTx(dbTx, "BTC", tx.TxID, tx.Status.BlockHeight); err != nil {
+				return fmt.Errorf("failed to mark BTC transaction as processed: %w", err)
+			}
+
+			return nil
+		})
+	})
+}
+
+// processBTCTxWithTransactionAndData processes a single BTC transaction with pre-parsed OP_RETURN data
+// This version skips validation since it's already been done in isValidDepositTransaction
+func (m *Module) processBTCTxWithTransactionAndData(tx types.BTCTx, currentHeight int64, opReturnData *BTCOPReturnData) error {
+	return m.processTransactionWithRetry("BTC", func() error {
+		return m.database.WithTransaction(func(dbTx *sql.Tx) error {
+			// Transaction is already validated and confirmed by previous filtering steps
+
+			// 1. Save business data (using pre-parsed OP_RETURN data)
+			if err := m.saveBTCTransaction(tx, opReturnData); err != nil {
+				return fmt.Errorf("failed to save BTC transaction data: %w", err)
+			}
+
+			// 3. Mark as processed last (atomicity guarantee)
+			// Note: ON CONFLICT DO NOTHING in the database handles concurrent processing
+			if err := m.database.MarkTransactionProcessedInTx(dbTx, "BTC", tx.TxID, tx.Status.BlockHeight); err != nil {
 				return fmt.Errorf("failed to mark BTC transaction as processed: %w", err)
 			}
 
@@ -701,11 +926,11 @@ func (m *Module) processBTCTxWithTransaction(tx types.BTCTx, currentHeight int64
 // processBTCTx processes a single BTC transaction
 func (m *Module) processBTCTx(tx types.BTCTx, currentHeight int64) error {
 	// Check confirmations
-	if !tx.Confirmed || tx.BlockHeight <= 0 {
+	if !tx.Status.Confirmed || tx.Status.BlockHeight <= 0 {
 		return nil // Skip unconfirmed transactions
 	}
 
-	confirmations := currentHeight - tx.BlockHeight + 1
+	confirmations := currentHeight - tx.Status.BlockHeight + 1
 	if confirmations < int64(m.Config.BTCMinConfirmations) {
 		return nil // Not enough confirmations
 	}
@@ -728,19 +953,19 @@ func (m *Module) processBTCTx(tx types.BTCTx, currentHeight int64) error {
 func (m *Module) validateBTCTx(tx types.BTCTx) (bool, *BTCOPReturnData, error) {
 	// Check if it's from vault (should not be)
 	for _, vin := range tx.Vin {
-		if strings.ToLower(strings.TrimSpace(vin.Prevout.ScriptPubKeyAddr)) ==
-			strings.ToLower(strings.TrimSpace(m.Config.BTCVaultAddr)) {
+		if normalizeAddress(vin.Prevout.ScriptPubKeyAddr) ==
+			normalizeAddress(m.Config.BTCVaultAddr) {
 			return false, nil, nil // From vault, invalid
 		}
 	}
 
 	// Find vault output
 	var vaultOutput *types.BTCVout
-	for _, vout := range tx.Vout {
-		if strings.ToLower(strings.TrimSpace(vout.ScriptPubKeyAddr)) ==
-			strings.ToLower(strings.TrimSpace(m.Config.BTCVaultAddr)) &&
+	for i, vout := range tx.Vout {
+		if normalizeAddress(vout.ScriptPubKeyAddr) ==
+			normalizeAddress(m.Config.BTCVaultAddr) &&
 			vout.Value >= m.Config.BTCMinAmount {
-			vaultOutput = &vout
+			vaultOutput = &tx.Vout[i] // Use index to avoid address reuse issues
 			break
 		}
 	}
@@ -751,9 +976,9 @@ func (m *Module) validateBTCTx(tx types.BTCTx) (bool, *BTCOPReturnData, error) {
 
 	// Find OP_RETURN output
 	var opReturnOutput *types.BTCVout
-	for _, vout := range tx.Vout {
+	for i, vout := range tx.Vout {
 		if vout.ScriptPubKeyType == "op_return" {
-			opReturnOutput = &vout
+			opReturnOutput = &tx.Vout[i] // Use index to avoid address reuse issues
 			break
 		}
 	}
@@ -859,15 +1084,9 @@ func parseBTCOPReturn(scriptPubKey string) (*BTCOPReturnData, error) {
 	}
 
 	return &BTCOPReturnData{
-		ImuachainAddress: strings.ToLower(strings.TrimSpace(imuachainHex)),
+		ImuachainAddress: normalizeAddress(imuachainHex),
 		ValidatorAddress: strings.TrimSpace(validatorAddress),
 	}, nil
-}
-
-// isValidValidatorAddress validates validator address format (bech32 with 'im' prefix)
-func (m *Module) isValidValidatorAddress(address string) bool {
-	// Simple validation - should start with 'im' and be 41 characters
-	return len(address) == 41 && strings.HasPrefix(address, "im")
 }
 
 // isValidatorRegistered checks if validator is registered in bootstrap contract
@@ -884,8 +1103,8 @@ func (m *Module) saveBTCTransaction(tx types.BTCTx, opReturnData *BTCOPReturnDat
 	// Find vault output
 	var vaultOutput *types.BTCVout
 	for _, vout := range tx.Vout {
-		if strings.ToLower(strings.TrimSpace(vout.ScriptPubKeyAddr)) ==
-			strings.ToLower(strings.TrimSpace(m.Config.BTCVaultAddr)) {
+		if normalizeAddress(vout.ScriptPubKeyAddr) ==
+			normalizeAddress(m.Config.BTCVaultAddr) {
 			vaultOutput = &vout
 			break
 		}
@@ -940,11 +1159,6 @@ func (m *Module) refetchXRPStates() error {
 	log.Debug().Str("module", "bootstrap").Str("refetching", "XRP states").
 		Msg("refetching XRP states")
 
-	if m.Config.XRPVaultAddr == "" {
-		log.Debug().Str("module", "bootstrap").Msg("XRP vault address not configured, skipping")
-		return nil
-	}
-
 	// Get current ledger index
 	currentLedger, err := m.getXRPCurrentLedger()
 	if err != nil {
@@ -953,8 +1167,8 @@ func (m *Module) refetchXRPStates() error {
 
 	// Get or initialize scan state
 	scanState, err := m.database.GetScanState("XRP")
-	if err != nil {
-		// First time scanning, initialize with start ledger
+	if err != nil || scanState == nil {
+		// First time scanning or record not found, initialize with start ledger
 		startLedger := m.Config.XRPStartLedger
 		if startLedger == 0 {
 			// Start from current ledger minus confirmation depth for safety
@@ -971,9 +1185,10 @@ func (m *Module) refetchXRPStates() error {
 			UpdatedAt:  time.Now(),
 		}
 
-		log.Info().Int64("start_ledger", startLedger).Msg("initializing XRP scan state")
-		if err := m.database.UpdateScanState(scanState); err != nil {
-			return fmt.Errorf("failed to initialize XRP scan state: %s", err)
+		if err != nil {
+			log.Info().Int64("start_ledger", startLedger).Err(err).Msg("initializing XRP scan state due to error")
+		} else {
+			log.Info().Int64("start_ledger", startLedger).Msg("initializing XRP scan state (no existing record)")
 		}
 	}
 
@@ -1053,42 +1268,51 @@ func (m *Module) refetchXRPStates() error {
 	return nil
 }
 
-// getXRPCurrentLedger gets the current XRP ledger index
+// getXRPCurrentLedger gets the current XRP ledger index using xrpl-go client
 func (m *Module) getXRPCurrentLedger() (int64, error) {
-	requestBody := map[string]interface{}{
-		"method": "ledger",
-		"params": []map[string]interface{}{
-			{
-				"ledger_index": "validated",
-			},
-		},
+	request := map[string]interface{}{
+		"command":      "ledger",
+		"ledger_index": "validated",
+		"binary":       false,
+		"api_version":  2,
 	}
 
-	jsonBody, err := json.Marshal(requestBody)
+	log.Debug().Str("module", "bootstrap").Interface("request", request).Msg("sending XRP ledger request")
+
+	response, err := m.XrpClient.Request(request)
 	if err != nil {
-		return 0, err
+		log.Error().Err(err).Str("module", "bootstrap").Msg("XRP client request failed")
+		return 0, fmt.Errorf("failed to request current ledger: %w", err)
 	}
 
-	resp, err := http.Post(m.Config.XRPRPC, "application/json", bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
+	log.Debug().Str("module", "bootstrap").Interface("response", response).Msg("received XRP ledger response")
 
-	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("API returned status %d", resp.StatusCode)
-	}
+	// Parse response to extract ledger index
+	responseMap := map[string]interface{}(response)
 
-	var response map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return 0, err
-	}
-
-	result, ok := response["result"].(map[string]interface{})
+	result, ok := responseMap["result"].(map[string]interface{})
 	if !ok {
-		return 0, fmt.Errorf("invalid response format")
+		return 0, fmt.Errorf("invalid response result format")
 	}
 
+	// First try to get ledger_index from result level (this is usually a number)
+	if ledgerIndexValue, exists := result["ledger_index"]; exists {
+		switch v := ledgerIndexValue.(type) {
+		case float64:
+			return int64(v), nil
+		case int:
+			return int64(v), nil
+		case int64:
+			return v, nil
+		case string:
+			// Try to parse string to int64
+			if parsed, err := strconv.ParseInt(v, 10, 64); err == nil {
+				return parsed, nil
+			}
+		}
+	}
+
+	// Fallback to ledger.ledger_index (this might be a string)
 	ledger, ok := result["ledger"].(map[string]interface{})
 	if !ok {
 		return 0, fmt.Errorf("invalid ledger format")
@@ -1096,7 +1320,7 @@ func (m *Module) getXRPCurrentLedger() (int64, error) {
 
 	ledgerIndex, ok := ledger["ledger_index"]
 	if !ok {
-		return 0, fmt.Errorf("ledger_index not found")
+		return 0, fmt.Errorf("ledger_index not found in either location")
 	}
 
 	switch v := ledgerIndex.(type) {
@@ -1106,9 +1330,170 @@ func (m *Module) getXRPCurrentLedger() (int64, error) {
 		return int64(v), nil
 	case int64:
 		return v, nil
+	case string:
+		// Try to parse string to int64
+		if parsed, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return parsed, nil
+		}
+		return 0, fmt.Errorf("failed to parse ledger_index string: %s", v)
 	default:
-		return 0, fmt.Errorf("invalid ledger_index type")
+		return 0, fmt.Errorf("invalid ledger_index type: %T", v)
 	}
+}
+
+// parseXRPTransactionFromAccountTx safely parses XRP transaction data from account_tx response
+func parseXRPTransactionFromAccountTx(txData map[string]interface{}) (*types.XRPTransaction, error) {
+	// account_tx returns transactions in a different format than ledger command
+	// The transaction data is nested under "tx" field and metadata under "meta"
+
+	txField, hasTx := txData["tx"]
+	metaField, hasMeta := txData["meta"]
+
+	if !hasTx || !hasMeta {
+		return nil, fmt.Errorf("missing tx or meta field in account_tx response")
+	}
+
+	txJSON, ok := txField.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid tx field type")
+	}
+
+	metaJSON, ok := metaField.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid meta field type")
+	}
+
+	// Extract basic transaction info - hash might be in txJSON or top level txData
+	var hash string
+	var err error
+
+	// Try to get hash from txJSON first
+	if hashValue, exists := txJSON["hash"]; exists {
+		if hashStr, ok := hashValue.(string); ok {
+			hash = hashStr
+		}
+	}
+
+	// If not found in txJSON, try top level txData
+	if hash == "" {
+		hash, err = safeStringExtract(txData, "hash")
+		if err != nil {
+			return nil, fmt.Errorf("failed to extract hash from either location: %s", err)
+		}
+	}
+
+	// Get ledger_index from txJSON
+	ledgerIndexFloat, ok := txJSON["ledger_index"].(float64)
+	if !ok {
+		return nil, fmt.Errorf("invalid ledger_index type")
+	}
+	ledgerIndex := int64(ledgerIndexFloat)
+
+	// Get date from txJSON or txData
+	var date int64
+	if dateFloat, ok := txJSON["date"].(float64); ok {
+		date = int64(dateFloat)
+	} else if dateFloat, ok := txData["date"].(float64); ok {
+		date = int64(dateFloat)
+	}
+
+	// Check if validated
+	validated, _ := txData["validated"].(bool)
+	if !validated {
+		return nil, fmt.Errorf("transaction not validated")
+	}
+
+	// Extract transaction details
+	transactionType, err := safeStringExtract(txJSON, "TransactionType")
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract TransactionType: %s", err)
+	}
+
+	account, err := safeStringExtract(txJSON, "Account")
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract Account: %s", err)
+	}
+
+	// Validate account format
+	if !strings.HasPrefix(account, "r") || len(account) < 25 || len(account) > 35 {
+		return nil, fmt.Errorf("invalid XRP account format: %s", account)
+	}
+
+	// Extract meta information
+	transactionResult, err := safeStringExtract(metaJSON, "TransactionResult")
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract TransactionResult: %s", err)
+	}
+
+	transactionIndexFloat, ok := metaJSON["TransactionIndex"].(float64)
+	if !ok {
+		return nil, fmt.Errorf("invalid TransactionIndex type")
+	}
+	transactionIndex := int64(transactionIndexFloat)
+
+	// Create transaction struct
+	tx := &types.XRPTransaction{
+		Hash:        hash,
+		LedgerIndex: ledgerIndex,
+		Date:        date,
+		Validated:   validated,
+		Tx: types.XRPTx{
+			TransactionType: transactionType,
+			Account:         account,
+		},
+		Meta: types.XRPMeta{
+			TransactionResult: transactionResult,
+			TransactionIndex:  transactionIndex,
+		},
+	}
+
+	// Extract optional fields safely
+	if destination, ok := txJSON["Destination"].(string); ok {
+		tx.Tx.Destination = destination
+	}
+
+	if amount, ok := txJSON["Amount"]; ok {
+		tx.Tx.Amount = amount
+	}
+
+	if fee, ok := txJSON["Fee"].(string); ok {
+		tx.Tx.Fee = fee
+	}
+
+	if destTag, ok := txJSON["DestinationTag"].(float64); ok {
+		tx.Tx.DestinationTag = int64(destTag)
+	}
+
+	// Parse memos safely
+	if memosInterface, ok := txJSON["Memos"].([]interface{}); ok {
+		memos := make([]types.XRPMemo, 0, len(memosInterface))
+		for _, memoInterface := range memosInterface {
+			memoData, ok := memoInterface.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			memo, ok := memoData["Memo"].(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			xrpMemo := types.XRPMemo{}
+			if memoType, ok := memo["MemoType"].(string); ok {
+				xrpMemo.Memo.MemoType = memoType
+			}
+			if memoDataStr, ok := memo["MemoData"].(string); ok {
+				xrpMemo.Memo.MemoData = memoDataStr
+			}
+			if memoFormat, ok := memo["MemoFormat"].(string); ok {
+				xrpMemo.Memo.MemoFormat = memoFormat
+			}
+
+			memos = append(memos, xrpMemo)
+		}
+		tx.Tx.Memos = memos
+	}
+
+	return tx, nil
 }
 
 // parseXRPTransaction safely parses XRP transaction data from JSON map
@@ -1498,157 +1883,126 @@ func (m *Module) saveXRPTransaction(tx types.XRPTransaction, memoData *XRPMemoDa
 	return nil
 }
 
-// getXRPVaultTransactionsFromLedger gets XRP vault transactions from a specific ledger range
+// getXRPVaultTransactionsFromLedger gets XRP vault transactions from a specific ledger range using efficient account_tx method
 func (m *Module) getXRPVaultTransactionsFromLedger(fromLedger, toLedger int64) ([]types.XRPTransaction, error) {
+	log.Info().Int64("from_ledger", fromLedger).Int64("to_ledger", toLedger).
+		Str("vault_address", m.Config.XRPVaultAddr).
+		Msg("fetching XRP vault transactions using account_tx method")
+
 	var allTxs []types.XRPTransaction
+	var marker interface{} // For pagination
 
-	// Process ledgers in batches to avoid overwhelming the API
-	batchSize := int64(m.Config.ScanBatchSize)
-	if batchSize <= 0 {
-		batchSize = 10 // Default batch size
-	}
-
-	for currentLedger := fromLedger; currentLedger <= toLedger; currentLedger += batchSize {
-		endLedger := currentLedger + batchSize - 1
-		if endLedger > toLedger {
-			endLedger = toLedger
+	for {
+		// Build account_tx request
+		request := map[string]interface{}{
+			"command":          "account_tx",
+			"account":          m.Config.XRPVaultAddr,
+			"binary":           false,
+			"api_version":      2,
+			"ledger_index_min": fromLedger,
+			"ledger_index_max": toLedger,
+			"limit":            200, // Maximum allowed by rippled
 		}
 
-		log.Debug().Int64("from", currentLedger).Int64("to", endLedger).
-			Msg("scanning XRP ledgers for vault transactions")
+		// Add pagination marker if available
+		if marker != nil {
+			request["marker"] = marker
+		}
 
-		// Get transactions for each ledger in the range
-		for ledgerIndex := currentLedger; ledgerIndex <= endLedger; ledgerIndex++ {
-			ledgerTxs, err := m.getXRPLedgerTransactions(ledgerIndex)
-			if err != nil {
-				log.Err(err).Int64("ledger", ledgerIndex).Msg("error getting XRP ledger transactions")
+		log.Debug().Interface("request", request).Msg("sending account_tx request")
+
+		response, err := m.XrpClient.Request(request)
+		if err != nil {
+			return nil, fmt.Errorf("failed to request account transactions: %w", err)
+		}
+
+		// Parse response
+		responseMap := map[string]interface{}(response)
+		result, ok := responseMap["result"].(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("invalid response result format")
+		}
+
+		// Check if the request was successful
+		if status, ok := result["status"].(string); ok && status != "success" {
+			// If no transactions found, it's not an error
+			if status == "actNotFound" {
+				log.Info().Str("vault_address", m.Config.XRPVaultAddr).
+					Msg("no transactions found for vault address (account not found)")
+				break
+			}
+			return nil, fmt.Errorf("account_tx request failed with status: %s", status)
+		}
+
+		// Extract transactions
+		transactions, ok := result["transactions"].([]interface{})
+		if !ok {
+			log.Info().Msg("no transactions field in response")
+			break
+		}
+
+		// Process transactions
+		for _, txData := range transactions {
+			txMap, ok := txData.(map[string]interface{})
+			if !ok {
+				log.Debug().Msg("skipping invalid transaction data")
 				continue
 			}
 
-			// Filter transactions involving vault address
-			for _, tx := range ledgerTxs {
-				if m.isXRPVaultTransaction(tx) {
-					allTxs = append(allTxs, tx)
-				}
+			// Parse the transaction
+			tx, err := parseXRPTransactionFromAccountTx(txMap)
+			if err != nil {
+				log.Debug().Err(err).Msg("skipping invalid XRP transaction")
+				continue
+			}
+
+			// Filter by ledger range (double-check since the API should already filter)
+			if tx.LedgerIndex >= fromLedger && tx.LedgerIndex <= toLedger {
+				allTxs = append(allTxs, *tx)
 			}
 		}
 
-		// Add delay between batches to be API-friendly
-		if endLedger < toLedger {
+		// Check for pagination marker
+		if nextMarker, exists := result["marker"]; exists {
+			marker = nextMarker
+			log.Debug().Interface("marker", marker).
+				Int("txs_processed", len(transactions)).
+				Msg("continuing with next page of transactions")
+
+			// Add small delay between requests to be API-friendly
 			time.Sleep(100 * time.Millisecond)
+		} else {
+			// No more pages
+			break
 		}
 	}
 
 	log.Info().Int("total_txs", len(allTxs)).
 		Int64("from_ledger", fromLedger).
 		Int64("to_ledger", toLedger).
-		Msg("completed XRP vault transaction scanning")
+		Msg("completed efficient XRP vault transaction fetching")
 
 	return allTxs, nil
 }
 
-// getXRPLedgerTransactions gets all transactions for a specific ledger index
-func (m *Module) getXRPLedgerTransactions(ledgerIndex int64) ([]types.XRPTransaction, error) {
-	requestBody := map[string]interface{}{
-		"method": "ledger",
-		"params": []map[string]interface{}{
-			{
-				"ledger_index": ledgerIndex,
-				"transactions": true,
-				"expand":       true,
-			},
-		},
-	}
-
-	jsonBody, err := json.Marshal(requestBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %s", err)
-	}
-
-	// Create HTTP client with timeout
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", m.Config.XRPRPC, bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %s", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get ledger transactions: %s", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API returned status %d for ledger %d", resp.StatusCode, ledgerIndex)
-	}
-
-	var response map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %s", err)
-	}
-
-	result, ok := response["result"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid response format")
-	}
-
-	ledger, ok := result["ledger"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid ledger format")
-	}
-
-	transactions, ok := ledger["transactions"].([]interface{})
-	if !ok {
-		// No transactions in this ledger
-		return []types.XRPTransaction{}, nil
-	}
-
-	var txs []types.XRPTransaction
-	for _, txData := range transactions {
-		txMap, ok := txData.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		// Parse transaction using safe parsing function
-		tx, err := parseXRPTransaction(txMap)
-		if err != nil {
-			log.Debug().Str("error", err.Error()).Int64("ledger", ledgerIndex).
-				Msg("skipping invalid XRP transaction in ledger")
-			continue
-		}
-
-		txs = append(txs, *tx)
-	}
-
-	return txs, nil
-}
-
 // isXRPVaultTransaction checks if a transaction involves the vault address
 func (m *Module) isXRPVaultTransaction(tx types.XRPTransaction) bool {
-	vaultAddr := strings.ToLower(strings.TrimSpace(m.Config.XRPVaultAddr))
+	vaultAddr := normalizeAddress(m.Config.XRPVaultAddr)
 
 	// Check if transaction is sent to vault address
-	if strings.ToLower(strings.TrimSpace(tx.Tx.Destination)) == vaultAddr {
+	if normalizeAddress(tx.Tx.Destination) == vaultAddr {
 		return true
 	}
 
 	// Check if transaction is sent from vault address
-	if strings.ToLower(strings.TrimSpace(tx.Tx.Account)) == vaultAddr {
+	if normalizeAddress(tx.Tx.Account) == vaultAddr {
 		return true
 	}
 
 	return false
 }
 
-// refetchBootstrapStates refetches all bootstrap states and update them using parallel processing
+// refetchBootstrapStates refetches BTC and XRP bootstrap states using parallel processing
 // Note: BTC and XRP processing now uses separate mutexes for true parallelism in address mapping
 // Database operations are handled per-chain and should not significantly compete with each other
 func (m *Module) refetchBootstrapStates() error {
@@ -1666,7 +2020,7 @@ func (m *Module) refetchBootstrapStates() error {
 		err       error
 	}
 
-	resultChan := make(chan chainResult, 3)
+	resultChan := make(chan chainResult, 2)
 
 	// Channel to signal when all goroutines are done
 	doneChan := make(chan struct{})
@@ -1846,7 +2200,7 @@ func (m *Module) refetchBootstrapStates() error {
 	}
 
 	// Log summary of results
-	totalChains := 3
+	totalChains := 2
 	log.Info().Int("successful", successCount).Int("failed", len(errors)).Int("total", totalChains).
 		Msg("parallel bootstrap states refetch completed")
 
@@ -1868,47 +2222,63 @@ func (m *Module) refetchBootstrapStates() error {
 	return nil
 }
 
-// refetchBootstrapStatesSequential refetches all bootstrap states sequentially (backup implementation)
-// This function can be used if parallel processing causes issues or if strict error handling is needed
+// refetchBootstrapStatesSequential refetches BTC and XRP bootstrap states sequentially
+// This function continues processing even if one chain fails, collecting all errors
 func (m *Module) refetchBootstrapStatesSequential() error {
 	log.Debug().Str("module", "bootstrap").Msg("starting sequential bootstrap states refetch")
 
-	// Process ETH states
-	log.Debug().Str("chain", "ETH").Msg("starting ETH states refetch")
-	start := time.Now()
-	err := m.refetchETHStates()
-	if err != nil {
-		log.Error().Err(err).Str("chain", "ETH").Dur("duration", time.Since(start)).
-			Msg("ETH states refetch failed")
-		return fmt.Errorf("error while refetching states from ETH: %s", err)
-	}
-	log.Info().Str("chain", "ETH").Dur("duration", time.Since(start)).
-		Msg("ETH states refetch completed successfully")
+	var errors []string
+	successCount := 0
 
 	// Process BTC states
 	log.Debug().Str("chain", "BTC").Msg("starting BTC states refetch")
-	start = time.Now()
-	err = m.refetchBTCStates()
-	if err != nil {
-		log.Error().Err(err).Str("chain", "BTC").Dur("duration", time.Since(start)).
-			Msg("BTC states refetch failed")
-		return fmt.Errorf("error while refetching states from BTC: %s", err)
-	}
-	log.Info().Str("chain", "BTC").Dur("duration", time.Since(start)).
-		Msg("BTC states refetch completed successfully")
+	start := time.Now()
+	err := m.refetchBTCStates()
+	duration := time.Since(start)
 
-	// Process XRP states
+	if err != nil {
+		log.Error().Err(err).Str("chain", "BTC").Dur("duration", duration).
+			Msg("BTC states refetch failed")
+		errors = append(errors, fmt.Sprintf("BTC: %s", err.Error()))
+	} else {
+		log.Info().Str("chain", "BTC").Dur("duration", duration).
+			Msg("BTC states refetch completed successfully")
+		successCount++
+	}
+
+	// Process XRP states (continue even if BTC failed)
 	log.Debug().Str("chain", "XRP").Msg("starting XRP states refetch")
 	start = time.Now()
 	err = m.refetchXRPStates()
-	if err != nil {
-		log.Error().Err(err).Str("chain", "XRP").Dur("duration", time.Since(start)).
-			Msg("XRP states refetch failed")
-		return fmt.Errorf("error while refetching states from XRP: %s", err)
-	}
-	log.Info().Str("chain", "XRP").Dur("duration", time.Since(start)).
-		Msg("XRP states refetch completed successfully")
+	duration = time.Since(start)
 
-	log.Info().Msg("sequential bootstrap states refetch completed successfully")
+	if err != nil {
+		log.Error().Err(err).Str("chain", "XRP").Dur("duration", duration).
+			Msg("XRP states refetch failed")
+		errors = append(errors, fmt.Sprintf("XRP: %s", err.Error()))
+	} else {
+		log.Info().Str("chain", "XRP").Dur("duration", duration).
+			Msg("XRP states refetch completed successfully")
+		successCount++
+	}
+
+	// Report final results
+	log.Info().Int("successful", successCount).Int("failed", len(errors)).
+		Msg("sequential bootstrap states refetch completed")
+
+	// Return error if any chain failed
+	if len(errors) > 0 {
+		if len(errors) == 2 {
+			// Both chains failed
+			return fmt.Errorf("all chains failed to refetch states: %s", strings.Join(errors, "; "))
+		} else {
+			// Some chains failed - log warning but don't fail the entire operation
+			log.Warn().Strs("failed_chains", errors).
+				Msg("some chains failed during sequential refetch, but processing continued")
+			// Return nil to indicate partial success
+			return nil
+		}
+	}
+
 	return nil
 }
