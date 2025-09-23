@@ -7,7 +7,7 @@ CREATE TABLE bootstrap_validator
     commission_rate     NUMERIC NOT NULL,
     max_commission_rate NUMERIC NOT NULL,
     max_change_rate     NUMERIC NOT NULL,
-    updated_at          TIMESTAMP WITHOUT TIME ZONE,
+    updated_at          TIMESTAMP WITHOUT TIME ZONE
 );
 
 CREATE INDEX idx_validator_im_addr ON bootstrap_validator (validator_im_addr);
@@ -17,7 +17,7 @@ CREATE TABLE bootstrap_client_chains
     name                TEXT NOT NULL,
     meta_info           TEXT NOT NULL,
     layer_zero_chain_id BIGINT PRIMARY KEY,
-    updated_at          TIMESTAMP WITHOUT TIME ZONE,
+    updated_at          TIMESTAMP WITHOUT TIME ZONE
 );
 
 CREATE TABLE bootstrap_tokens

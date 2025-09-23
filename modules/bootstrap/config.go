@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"fmt"
+
 	callistotypes "github.com/forbole/callisto/v4/types"
 	"gopkg.in/yaml.v3"
 )
