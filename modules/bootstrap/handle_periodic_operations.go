@@ -348,9 +348,6 @@ func (m *Module) refetchBTCStates() error {
 	//TODO: test
 	return nil
 
-	log.Debug().Str("module", "bootstrap").Str("refetching", "BTC states").
-		Msg("refetching BTC states")
-
 	// Get current block height for confirmation calculations
 	currentHeight, err := m.getBTCCurrentBlockHeight()
 	if err != nil {
@@ -857,56 +854,11 @@ func (m *Module) getTxIndexInBlock(client *http.Client, txID string) (int64, err
 	return 0, fmt.Errorf("transaction %s not found in block %s", txID, blockHash)
 }
 
-// processBTCTxWithTransaction processes a single BTC transaction within a database transaction
-// Note: Duplicate processing check is already done at the caller level, but we keep
-// the database-level atomicity guarantee with ON CONFLICT DO NOTHING
-func (m *Module) processBTCTxWithTransaction(tx types.BTCTx, currentHeight int64) error {
-	return m.processTransactionWithRetry("BTC", func() error {
-		return m.database.WithTransaction(func(dbTx *sql.Tx) error {
-			// 1. Validate transaction first (no database writes)
-			// Check confirmations
-			if !tx.Status.Confirmed || tx.Status.BlockHeight <= 0 {
-				return nil // Skip unconfirmed transactions
-			}
-
-			confirmations := currentHeight - tx.Status.BlockHeight + 1
-			if confirmations < int64(m.Config.BTCMinConfirmations) {
-				return nil // Not enough confirmations
-			}
-
-			// Validate transaction
-			isValid, opReturnData, err := m.validateBTCTx(tx)
-			if err != nil {
-				return fmt.Errorf("error validating BTC transaction: %w", err)
-			}
-
-			if !isValid {
-				return nil // Invalid transaction, skip silently
-			}
-
-			// 2. Save business data
-			if err := m.saveBTCTransaction(tx, opReturnData); err != nil {
-				return fmt.Errorf("failed to save BTC transaction data: %w", err)
-			}
-
-			// 3. Mark as processed last (atomicity guarantee)
-			// Note: ON CONFLICT DO NOTHING in the database handles concurrent processing
-			if err := m.database.MarkTransactionProcessedInTx(dbTx, "BTC", tx.TxID, tx.Status.BlockHeight); err != nil {
-				return fmt.Errorf("failed to mark BTC transaction as processed: %w", err)
-			}
-
-			return nil
-		})
-	})
-}
-
 // processBTCTxWithTransactionAndData processes a single BTC transaction with pre-parsed OP_RETURN data
 // This version skips validation since it's already been done in isValidDepositTransaction
 func (m *Module) processBTCTxWithTransactionAndData(tx types.BTCTx, currentHeight int64, opReturnData *BTCOPReturnData) error {
 	return m.processTransactionWithRetry("BTC", func() error {
 		return m.database.WithTransaction(func(dbTx *sql.Tx) error {
-			// Transaction is already validated and confirmed by previous filtering steps
-
 			// 1. Save business data (using pre-parsed OP_RETURN data)
 			if err := m.saveBTCTransaction(tx, opReturnData); err != nil {
 				return fmt.Errorf("failed to save BTC transaction data: %w", err)
@@ -1204,6 +1156,7 @@ func (m *Module) refetchXRPStates() error {
 		Msg("starting incremental XRP scan")
 
 	// Get transactions for ledger range (incremental scan)
+	// Transactions are pre-validated, confirmed, and include parsed memo data
 	transactions, err := m.getXRPVaultTransactionsFromLedger(scanState.SafeHeight+1, safeCurrentLedger)
 	if err != nil {
 		return fmt.Errorf("error getting XRP vault transactions from ledger %d to %d: %s",
@@ -1212,22 +1165,10 @@ func (m *Module) refetchXRPStates() error {
 
 	// Sort transactions by ledger index and order for consistent processing
 	sortXRPTransactions(transactions)
-
 	processedCount := 0
-	duplicateCount := 0
 
-	// Process transactions with address binding validation and deduplication
+	// Process transactions that are already validated and confirmed
 	for _, tx := range transactions {
-		// Check if transaction already processed
-		if processed, err := m.database.IsTransactionProcessed("XRP", tx.Hash); err != nil {
-			log.Err(err).Str("hash", tx.Hash).Msg("error checking if XRP transaction is processed")
-			continue
-		} else if processed {
-			duplicateCount++
-			log.Debug().Str("hash", tx.Hash).Msg("XRP transaction already processed, skipping")
-			continue
-		}
-
 		if err := m.processXRPTxWithTransaction(tx, currentLedger); err != nil {
 			log.Err(err).Str("hash", tx.Hash).Msg("error processing XRP transaction")
 			continue
@@ -1238,12 +1179,9 @@ func (m *Module) refetchXRPStates() error {
 
 	// Log processing statistics
 	totalTxs := len(transactions)
-	duplicateRate := float64(duplicateCount) / float64(totalTxs) * 100
 	log.Info().
 		Int("total_txs", totalTxs).
 		Int("processed", processedCount).
-		Int("duplicates", duplicateCount).
-		Float64("duplicate_rate_percent", duplicateRate).
 		Int64("from_ledger", scanState.SafeHeight).
 		Int64("to_ledger", safeCurrentLedger).
 		Msg("XRP transaction processing statistics")
@@ -1342,20 +1280,19 @@ func (m *Module) getXRPCurrentLedger() (int64, error) {
 }
 
 // parseXRPTransactionFromAccountTx safely parses XRP transaction data from account_tx response
-func parseXRPTransactionFromAccountTx(txData map[string]interface{}) (*types.XRPTransaction, error) {
-	// account_tx returns transactions in a different format than ledger command
-	// The transaction data is nested under "tx" field and metadata under "meta"
-
-	txField, hasTx := txData["tx"]
+// This function also performs bootstrap validation and memo parsing to avoid duplicate processing
+func (m *Module) parseXRPTransactionFromAccountTx(txData map[string]interface{}) (*types.XRPTransaction, error) {
+	// The transaction data is nested under "tx_json" field and metadata under "meta"
+	txField, hasTx := txData["tx_json"]
 	metaField, hasMeta := txData["meta"]
 
 	if !hasTx || !hasMeta {
-		return nil, fmt.Errorf("missing tx or meta field in account_tx response")
+		return nil, fmt.Errorf("missing tx_json or meta field in account_tx response")
 	}
 
 	txJSON, ok := txField.(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("invalid tx field type")
+		return nil, fmt.Errorf("invalid tx_json field type")
 	}
 
 	metaJSON, ok := metaField.(map[string]interface{})
@@ -1403,10 +1340,15 @@ func parseXRPTransactionFromAccountTx(txData map[string]interface{}) (*types.XRP
 		return nil, fmt.Errorf("transaction not validated")
 	}
 
-	// Extract transaction details
+	// Extract transaction details with early validation
 	transactionType, err := safeStringExtract(txJSON, "TransactionType")
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract TransactionType: %s", err)
+	}
+	if transactionType != "Payment" {
+		log.Debug().Str("module", "bootstrap").Str("hash", hash).
+			Str("type", transactionType).Msg("skipping non-payment transaction")
+		return nil, nil // Not a payment transaction, skip early
 	}
 
 	account, err := safeStringExtract(txJSON, "Account")
@@ -1418,11 +1360,46 @@ func parseXRPTransactionFromAccountTx(txData map[string]interface{}) (*types.XRP
 	if !strings.HasPrefix(account, "r") || len(account) < 25 || len(account) > 35 {
 		return nil, fmt.Errorf("invalid XRP account format: %s", account)
 	}
+	if account == m.Config.XRPVaultAddr {
+		log.Debug().Str("module", "bootstrap").Str("hash", hash).
+			Str("account", account).Msg("skipping self-transfer from vault")
+		return nil, nil // Self-transfer from vault, skip early
+	}
+
+	// Extract and validate destination
+	var destination string
+	if dest, ok := txJSON["Destination"].(string); ok {
+		if dest != m.Config.XRPVaultAddr {
+			log.Debug().Str("module", "bootstrap").Str("hash", hash).
+				Str("destination", dest).Str("expected", m.Config.XRPVaultAddr).
+				Msg("skipping transaction not sent to vault")
+			return nil, nil // Not sent to our vault, skip early
+		}
+		destination = dest
+	} else {
+		log.Debug().Str("module", "bootstrap").Str("hash", hash).
+			Msg("skipping transaction with no destination")
+		return nil, nil // No destination specified, skip
+	}
+
+	// Extract and validate destination tag
+	var destTagInt int64
+	if destTag, ok := txJSON["DestinationTag"].(float64); ok {
+		destTagInt = int64(destTag)
+		if destTagInt != m.Config.XRPDestinationTag {
+			return nil, nil // Wrong destination tag, skip early
+		}
+	} else {
+		return nil, nil // No destination tag specified, skip
+	}
 
 	// Extract meta information
 	transactionResult, err := safeStringExtract(metaJSON, "TransactionResult")
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract TransactionResult: %s", err)
+	}
+	if transactionResult != "tesSUCCESS" {
+		return nil, nil // Transaction not successful, skip early
 	}
 
 	transactionIndexFloat, ok := metaJSON["TransactionIndex"].(float64)
@@ -1440,6 +1417,8 @@ func parseXRPTransactionFromAccountTx(txData map[string]interface{}) (*types.XRP
 		Tx: types.XRPTx{
 			TransactionType: transactionType,
 			Account:         account,
+			Destination:     destination,
+			DestinationTag:  destTagInt,
 		},
 		Meta: types.XRPMeta{
 			TransactionResult: transactionResult,
@@ -1447,21 +1426,17 @@ func parseXRPTransactionFromAccountTx(txData map[string]interface{}) (*types.XRP
 		},
 	}
 
-	// Extract optional fields safely
-	if destination, ok := txJSON["Destination"].(string); ok {
-		tx.Tx.Destination = destination
-	}
-
-	if amount, ok := txJSON["Amount"]; ok {
+	// Use DeliverMax if available, otherwise delivered_amount from meta, otherwise Amount
+	if deliverMax, ok := txJSON["DeliverMax"]; ok {
+		tx.Tx.Amount = deliverMax
+	} else if deliveredAmount, ok := metaJSON["delivered_amount"].(string); ok && deliveredAmount != "" {
+		tx.Tx.Amount = deliveredAmount
+	} else if amount, ok := txJSON["Amount"]; ok {
 		tx.Tx.Amount = amount
 	}
 
 	if fee, ok := txJSON["Fee"].(string); ok {
 		tx.Tx.Fee = fee
-	}
-
-	if destTag, ok := txJSON["DestinationTag"].(float64); ok {
-		tx.Tx.DestinationTag = int64(destTag)
 	}
 
 	// Parse memos safely
@@ -1491,173 +1466,29 @@ func parseXRPTransactionFromAccountTx(txData map[string]interface{}) (*types.XRP
 			memos = append(memos, xrpMemo)
 		}
 		tx.Tx.Memos = memos
+	}
+
+	// Perform detailed validation: memo parsing and amount checks
+	if !m.validateAndParseBootstrapXRPTx(tx) {
+		return nil, nil // Return nil for invalid transactions (not an error)
 	}
 
 	return tx, nil
 }
 
 // parseXRPTransaction safely parses XRP transaction data from JSON map
-func parseXRPTransaction(txData map[string]interface{}) (*types.XRPTransaction, error) {
-	// Extract required fields with safe type assertions
-	hash, err := safeStringExtract(txData, "hash")
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract hash: %s", err)
-	}
-
-	ledgerIndexFloat, ok := txData["ledger_index"].(float64)
-	if !ok {
-		return nil, fmt.Errorf("invalid ledger_index type")
-	}
-	ledgerIndex := int64(ledgerIndexFloat)
-
-	dateFloat, ok := txData["date"].(float64)
-	if !ok {
-		return nil, fmt.Errorf("invalid date type")
-	}
-	date := int64(dateFloat)
-
-	validated, _ := txData["validated"].(bool)
-	if !validated {
-		return nil, fmt.Errorf("transaction not validated")
-	}
-
-	// Parse tx_json
-	txJSON, ok := txData["tx_json"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid tx_json type")
-	}
-
-	// Extract transaction type and account
-	transactionType, err := safeStringExtract(txJSON, "TransactionType")
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract TransactionType: %s", err)
-	}
-
-	account, err := safeStringExtract(txJSON, "Account")
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract Account: %s", err)
-	}
-
-	// Validate account format (XRP addresses should be r... format)
-	if !strings.HasPrefix(account, "r") || len(account) < 25 || len(account) > 35 {
-		return nil, fmt.Errorf("invalid XRP account format: %s", account)
-	}
-
-	// Parse meta data
-	metaData, ok := txData["meta"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid meta type")
-	}
-
-	transactionResult, err := safeStringExtract(metaData, "TransactionResult")
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract TransactionResult: %s", err)
-	}
-
-	transactionIndexFloat, ok := metaData["TransactionIndex"].(float64)
-	if !ok {
-		return nil, fmt.Errorf("invalid TransactionIndex type")
-	}
-	transactionIndex := int64(transactionIndexFloat)
-
-	// Create transaction struct
-	tx := &types.XRPTransaction{
-		Hash:        hash,
-		LedgerIndex: ledgerIndex,
-		Date:        date,
-		Validated:   validated,
-		Tx: types.XRPTx{
-			TransactionType: transactionType,
-			Account:         account,
-		},
-		Meta: types.XRPMeta{
-			TransactionResult: transactionResult,
-			TransactionIndex:  transactionIndex,
-		},
-	}
-
-	// Extract optional fields safely
-	if destination, ok := txJSON["Destination"].(string); ok {
-		tx.Tx.Destination = destination
-	}
-
-	if amount, ok := txJSON["Amount"]; ok {
-		tx.Tx.Amount = amount
-	}
-
-	if fee, ok := txJSON["Fee"].(string); ok {
-		tx.Tx.Fee = fee
-	}
-
-	if destTag, ok := txJSON["DestinationTag"].(float64); ok {
-		tx.Tx.DestinationTag = int64(destTag)
-	}
-
-	// Parse memos safely
-	if memosInterface, ok := txJSON["Memos"].([]interface{}); ok {
-		memos := make([]types.XRPMemo, 0, len(memosInterface))
-		for _, memoInterface := range memosInterface {
-			memoData, ok := memoInterface.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			memo, ok := memoData["Memo"].(map[string]interface{})
-			if !ok {
-				continue
-			}
-
-			xrpMemo := types.XRPMemo{}
-			if memoType, ok := memo["MemoType"].(string); ok {
-				xrpMemo.Memo.MemoType = memoType
-			}
-			if memoDataStr, ok := memo["MemoData"].(string); ok {
-				xrpMemo.Memo.MemoData = memoDataStr
-			}
-			if memoFormat, ok := memo["MemoFormat"].(string); ok {
-				xrpMemo.Memo.MemoFormat = memoFormat
-			}
-
-			memos = append(memos, xrpMemo)
-		}
-		tx.Tx.Memos = memos
-	}
-
-	return tx, nil
-}
 
 // processXRPTxWithTransaction processes a single XRP transaction within a database transaction
-// Note: Duplicate processing check is already done at the caller level, but we keep
-// the database-level atomicity guarantee with ON CONFLICT DO NOTHING
+// This function assumes the transaction has already been validated and memo data parsed
 func (m *Module) processXRPTxWithTransaction(tx types.XRPTransaction, currentLedger int64) error {
 	return m.processTransactionWithRetry("XRP", func() error {
 		return m.database.WithTransaction(func(dbTx *sql.Tx) error {
-			// 1. Validate transaction first (no database writes)
-			// Check confirmations
-			if !tx.Validated || tx.LedgerIndex <= 0 {
-				return nil // Skip unvalidated transactions
-			}
-
-			confirmations := currentLedger - tx.LedgerIndex + 1
-			if confirmations < int64(m.Config.XRPMinConfirmations) {
-				return nil // Not enough confirmations
-			}
-
-			// Validate transaction
-			isValid, memoData, err := m.validateXRPTx(tx)
-			if err != nil {
-				return fmt.Errorf("error validating XRP transaction: %w", err)
-			}
-
-			if !isValid {
-				return nil // Invalid transaction, skip silently
-			}
-
-			// 2. Save business data
-			if err := m.saveXRPTransaction(tx, memoData); err != nil {
+			// Save business data using the pre-parsed address fields
+			if err := m.saveXRPTransaction(tx); err != nil {
 				return fmt.Errorf("failed to save XRP transaction data: %w", err)
 			}
 
-			// 3. Mark as processed last (atomicity guarantee)
+			// Mark as processed last (atomicity guarantee)
 			// Note: ON CONFLICT DO NOTHING in the database handles concurrent processing
 			if err := m.database.MarkTransactionProcessedInTx(dbTx, "XRP", tx.Hash, tx.LedgerIndex); err != nil {
 				return fmt.Errorf("failed to mark XRP transaction as processed: %w", err)
@@ -1668,116 +1499,62 @@ func (m *Module) processXRPTxWithTransaction(tx types.XRPTransaction, currentLed
 	})
 }
 
-// processXRPTx processes a single XRP transaction
-func (m *Module) processXRPTx(tx types.XRPTransaction, currentLedger int64) error {
-	// Check confirmations
-	if !tx.Validated || tx.LedgerIndex <= 0 {
-		return nil // Skip unvalidated transactions
-	}
-
-	confirmations := currentLedger - tx.LedgerIndex + 1
-	if confirmations < int64(m.Config.XRPMinConfirmations) {
-		return nil // Not enough confirmations
-	}
-
-	// Validate transaction
-	isValid, memoData, err := m.validateXRPTx(tx)
-	if err != nil {
-		return fmt.Errorf("error validating XRP transaction: %s", err)
-	}
-
-	if !isValid {
-		return nil // Invalid transaction
-	}
-
-	// Save transaction data to database
-	return m.saveXRPTransaction(tx, memoData)
-}
-
-// validateXRPTx validates a XRP transaction for bootstrap deposits
-func (m *Module) validateXRPTx(tx types.XRPTransaction) (bool, *XRPMemoData, error) {
-	// Must be Payment transaction
-	if tx.Tx.TransactionType != "Payment" {
-		return false, nil, nil
-	}
-
-	// Must be successful
-	if tx.Meta.TransactionResult != "tesSUCCESS" {
-		return false, nil, nil
-	}
-
-	// Must be sent to our vault address
-	if tx.Tx.Destination != m.Config.XRPVaultAddr {
-		return false, nil, nil
-	}
-
-	// Must not be from vault address (no self-transfers)
-	if tx.Tx.Account == m.Config.XRPVaultAddr {
-		return false, nil, nil
-	}
-
+// validateAndParseBootstrapXRPTx validates XRP transaction memo and amount (basic checks already done)
+// Returns true if the transaction is valid for bootstrap and addresses are set
+func (m *Module) validateAndParseBootstrapXRPTx(tx *types.XRPTransaction) bool {
 	// Must be XRP payment (not token)
 	amountStr, ok := tx.Tx.Amount.(string)
 	if !ok {
-		return false, nil, nil // Token payment
+		return false // Token payment
 	}
 
 	// Check minimum amount
 	amount, err := strconv.ParseInt(amountStr, 10, 64)
 	if err != nil {
-		return false, nil, fmt.Errorf("invalid amount format: %s", err)
+		return false
 	}
 
 	if amount < m.Config.XRPMinAmount {
-		return false, nil, nil
-	}
-
-	// Check DestinationTag (configurable)
-	if tx.Tx.DestinationTag != m.Config.XRPDestinationTag {
-		log.Debug().Int64("expected", m.Config.XRPDestinationTag).Int64("actual", tx.Tx.DestinationTag).
-			Str("hash", tx.Hash).Msg("invalid destination tag")
-		return false, nil, nil
+		return false
 	}
 
 	// Must have memo with validator info
-	if tx.Tx.Memos == nil || len(tx.Tx.Memos) == 0 {
-		return false, nil, nil
+	if len(tx.Tx.Memos) == 0 {
+		return false
 	}
 
 	// Parse memo data
 	memoData, err := parseXRPMemo(tx.Tx.Memos)
 	if err != nil {
-		log.Err(err).Str("hash", tx.Hash).Msg("failed to parse XRP memo")
-		return false, nil, nil
+		return false
 	}
 
 	// Validate validator address
 	if !m.isValidValidatorAddress(memoData.ValidatorAddress) {
-		log.Warn().Str("hash", tx.Hash).Str("validator", memoData.ValidatorAddress).
-			Msg("invalid validator address")
-		return false, nil, nil
+		return false
 	}
 
 	// Check if validator is registered
 	isRegistered, err := m.isValidatorRegistered(memoData.ValidatorAddress)
 	if err != nil {
-		return false, nil, fmt.Errorf("error checking validator registration: %s", err)
+		log.Err(err).Str("hash", tx.Hash).Msg("error checking validator registration")
+		return false
 	}
 
 	if !isRegistered {
-		log.Warn().Str("hash", tx.Hash).Str("validator", memoData.ValidatorAddress).
-			Msg("validator not registered")
-		return false, nil, nil
+		return false
 	}
 
 	// Validate 1-1 address binding for XRP
 	if !m.validateXRPAddressBinding(tx.Tx.Account, memoData.ImuachainAddress, tx.Hash) {
-		log.Warn().Str("hash", tx.Hash).Str("xrp_addr", tx.Tx.Account).
-			Str("imuachain_addr", memoData.ImuachainAddress).Msg("XRP address binding validation failed")
-		return false, nil, nil
+		return false
 	}
 
-	return true, memoData, nil
+	// Set parsed addresses in the transaction struct
+	tx.ImuachainAddress = memoData.ImuachainAddress
+	tx.ValidatorAddress = memoData.ValidatorAddress
+
+	return true
 }
 
 // XRPMemoData represents parsed memo data
@@ -1831,7 +1608,7 @@ func parseXRPMemo(memos []types.XRPMemo) (*XRPMemoData, error) {
 }
 
 // saveXRPTransaction saves XRP transaction data to database
-func (m *Module) saveXRPTransaction(tx types.XRPTransaction, memoData *XRPMemoData) error {
+func (m *Module) saveXRPTransaction(tx types.XRPTransaction) error {
 	// Get amount
 	amountStr, ok := tx.Tx.Amount.(string)
 	if !ok {
@@ -1844,7 +1621,7 @@ func (m *Module) saveXRPTransaction(tx types.XRPTransaction, memoData *XRPMemoDa
 	}
 
 	// Create staker ID
-	stakerID := memoData.ImuachainAddress + "_0x2" // XRP chain ID = 2
+	stakerID := tx.ImuachainAddress + "_0x2" // XRP chain ID = 2
 
 	// Save staker asset
 	stakerAsset := &types.BootstrapStakerAsset{
@@ -1864,7 +1641,7 @@ func (m *Module) saveXRPTransaction(tx types.XRPTransaction, memoData *XRPMemoDa
 	delegationState := &types.BootstrapDelegationState{
 		StakerID:     stakerID,
 		AssetID:      VirtualAddress + "_0x2",
-		OperatorAddr: memoData.ValidatorAddress,
+		OperatorAddr: tx.ValidatorAddress,
 		Delegated:    amountStr,
 		UpdatedAt:    time.Now(),
 	}
@@ -1876,7 +1653,7 @@ func (m *Module) saveXRPTransaction(tx types.XRPTransaction, memoData *XRPMemoDa
 	log.Info().
 		Str("hash", tx.Hash).
 		Str("staker", stakerID).
-		Str("validator", memoData.ValidatorAddress).
+		Str("validator", tx.ValidatorAddress).
 		Int64("amount", amount).
 		Msg("processed XRP bootstrap transaction")
 
@@ -1949,10 +1726,14 @@ func (m *Module) getXRPVaultTransactionsFromLedger(fromLedger, toLedger int64) (
 				continue
 			}
 
-			// Parse the transaction
-			tx, err := parseXRPTransactionFromAccountTx(txMap)
+			// Parse the transaction with validation
+			tx, err := m.parseXRPTransactionFromAccountTx(txMap)
 			if err != nil {
 				log.Debug().Err(err).Msg("skipping invalid XRP transaction")
+				continue
+			}
+			if tx == nil {
+				// Transaction parsed but failed bootstrap validation
 				continue
 			}
 
@@ -1983,23 +1764,6 @@ func (m *Module) getXRPVaultTransactionsFromLedger(fromLedger, toLedger int64) (
 		Msg("completed efficient XRP vault transaction fetching")
 
 	return allTxs, nil
-}
-
-// isXRPVaultTransaction checks if a transaction involves the vault address
-func (m *Module) isXRPVaultTransaction(tx types.XRPTransaction) bool {
-	vaultAddr := normalizeAddress(m.Config.XRPVaultAddr)
-
-	// Check if transaction is sent to vault address
-	if normalizeAddress(tx.Tx.Destination) == vaultAddr {
-		return true
-	}
-
-	// Check if transaction is sent from vault address
-	if normalizeAddress(tx.Tx.Account) == vaultAddr {
-		return true
-	}
-
-	return false
 }
 
 // refetchBootstrapStates refetches BTC and XRP bootstrap states using parallel processing

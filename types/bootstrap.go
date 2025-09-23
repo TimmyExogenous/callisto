@@ -102,6 +102,9 @@ type XRPTransaction struct {
 	Validated   bool    `json:"validated"`
 	Tx          XRPTx   `json:"tx"`
 	Meta        XRPMeta `json:"meta"`
+	// Parsed memo data for bootstrap transactions
+	ImuachainAddress string `json:"imuachain_address,omitempty"`
+	ValidatorAddress string `json:"validator_address,omitempty"`
 }
 
 type XRPTx struct {
