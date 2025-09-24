@@ -2,6 +2,11 @@ package bootstrap
 
 import (
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
 	parsecmdtypes "github.com/forbole/juno/v5/cmd/parse/types"
 	"github.com/forbole/juno/v5/database"
 	"github.com/forbole/juno/v5/modules"
@@ -10,10 +15,6 @@ import (
 	"github.com/forbole/juno/v5/types/config"
 	"github.com/go-co-op/gocron"
 	"github.com/spf13/cobra"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
 )
 
 func getParserContext(cfg config.Config, parseConfig *parsecmdtypes.Config) (*parser.Context, error) {
