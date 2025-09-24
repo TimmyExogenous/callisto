@@ -72,6 +72,16 @@ func (r *Registrar) BuildModules(ctx registrar.Context) jmodules.Modules {
 	cdc := ctx.EncodingConfig.Codec
 	db := database.Cast(ctx.Database)
 
+	// check whether it's used for bootstrap
+	for _, module := range ctx.JunoConfig.Chain.Modules {
+		if module == "bootstrap" {
+			return []jmodules.Module{
+				// exposes prometheus metrics, at node start.
+				telemetry.NewModule(ctx.JunoConfig),
+				bootstrap.NewModule(ctx.JunoConfig, db),
+			}
+		}
+	}
 	// we should modify the sources later.
 	sources, err := types.BuildSources(ctx.JunoConfig.Node, ctx.EncodingConfig)
 	if err != nil {
@@ -158,8 +168,6 @@ func (r *Registrar) BuildModules(ctx registrar.Context) jmodules.Modules {
 		oracle.NewModule(sources.OracleSource, cdc, db),
 		// stakingtypes.ModuleName,
 		slashingModule,
-		// bootstrap module
-		bootstrap.NewModule(ctx.JunoConfig, db),
 		// evidencetypes.ModuleName,
 		// govtypes.ModuleName,
 		// erc20types.ModuleName,

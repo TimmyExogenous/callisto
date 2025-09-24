@@ -15,19 +15,19 @@ dogfood:
   chain_id_without_revision: "imuachaintestnet_233"
 
 bootstrap:
-  eth_http: ""
-  eth_websocket: ""
+  eth_http: "https://eth-hoodi.g.alchemy.com/v2/f-RpeFxinYzcHV0IydB8u84Wkv74b8kI"
+  eth_websocket: "wss://eth-hoodi.g.alchemy.com/v2/f-RpeFxinYzcHV0IydB8u84Wkv74b8kI"
   btc_rpc: ""
   xrp_rpc: ""
-  bootstrap_addr: ""
+  bootstrap_addr: "0xf21FB1667A8Aa3D3ea365D3D1D257f3E4fdd0651"
   eth_update_interval: 1440
   btc_update_interval: 5
   xrp_update_interval: 5
   price_update_interval: 60
   eth_lz_chain_id: 40217
   client_chain_info:
-    - name: "Holesky"
-      meta_info: "Ethereum-testnet known as Holesky"
+    - name: "Hoodi"
+      meta_info: "Ethereum-testnet known as Hoodi"
       lz_chain_id: 40217
     - name: "Bitcoin"
       meta_info: "Bitcoin mainnet"
