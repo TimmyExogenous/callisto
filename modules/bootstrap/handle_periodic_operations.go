@@ -345,9 +345,6 @@ func sortXRPTransactions(txs []types.XRPTransaction) {
 
 // BTC vault transaction fetching and processing
 func (m *Module) refetchBTCStates() error {
-	//TODO: test
-	return nil
-
 	// Get current block height for confirmation calculations
 	currentHeight, err := m.getBTCCurrentBlockHeight()
 	if err != nil {
@@ -391,10 +388,9 @@ func (m *Module) refetchBTCStates() error {
 	// Process transactions sequentially (matches TypeScript processing loop)
 	for _, tx := range safelyFinalizedTxs {
 		// Validate transaction and parse OP_RETURN data in one step (matches TypeScript logic)
-		opReturnData := m.isValidDepositTransaction(tx)
-		if opReturnData == nil {
-			skippedCount++
-			continue
+		opReturnData, err := m.isValidDepositTransaction(tx)
+		if err != nil {
+			return err // Error already contains detailed message with txid
 		}
 
 		// Process transaction (matches TypeScript saveCrossChainTx logic)
@@ -440,23 +436,17 @@ func normalizeAddress(addr string) string {
 }
 
 // isValidDepositTransaction validates transaction format and parses OP_RETURN data
-// Matches TypeScript isValidDepositTransaction logic
 // Note: Confirmation checks are handled by filterSafelyFinalizedTransactions
-func (m *Module) isValidDepositTransaction(tx types.BTCTx) *BTCOPReturnData {
+// Returns error if validation fails, nil if transaction is valid for bootstrap
+func (m *Module) isValidDepositTransaction(tx types.BTCTx) (*BTCOPReturnData, error) {
 	vaultAddr := normalizeAddress(m.Config.BTCVaultAddr)
 
 	// Transaction is already confirmed and finalized by filterSafelyFinalizedTransactions
-
 	// Check if it's from vault (should not be) - matches TypeScript isFromVault check
-	isFromVault := false
 	for _, vin := range tx.Vin {
 		if normalizeAddress(vin.Prevout.ScriptPubKeyAddr) == vaultAddr {
-			isFromVault = true
-			break
+			return nil, fmt.Errorf("BTC transaction %s is from vault (invalid for bootstrap)", tx.TxID)
 		}
-	}
-	if isFromVault {
-		return nil
 	}
 
 	// Check if there's exactly one output to vault with minimum amount - matches TypeScript vaultOutputs check
@@ -467,31 +457,49 @@ func (m *Module) isValidDepositTransaction(tx types.BTCTx) *BTCOPReturnData {
 			vaultOutputCount++
 		}
 	}
-	if vaultOutputCount != 1 {
-		return nil
+	if vaultOutputCount == 0 {
+		return nil, fmt.Errorf("BTC transaction %s has no valid vault output (minimum %d satoshi)", tx.TxID, m.Config.BTCMinAmount)
+	}
+	if vaultOutputCount > 1 {
+		return nil, fmt.Errorf("BTC transaction %s has multiple vault outputs (%d), expected exactly 1", tx.TxID, vaultOutputCount)
 	}
 
-	// Check if there's exactly one OP_RETURN output - matches TypeScript opReturnOutputs check
+	// Find OP_RETURN output - matches TypeScript opReturnOutputs check
 	var opReturnOutput *types.BTCVout
 	opReturnCount := 0
 	for i, vout := range tx.Vout {
 		if vout.ScriptPubKeyType == "op_return" {
 			opReturnCount++
 			if opReturnCount > 1 {
-				break // Found multiple OP_RETURN outputs, exit early
+				return nil, fmt.Errorf("BTC transaction %s has multiple OP_RETURN outputs (%d), expected exactly 1", tx.TxID, opReturnCount)
 			}
 			// Use index instead of pointer to avoid address reuse issues
 			opReturnOutput = &tx.Vout[i]
 		}
 	}
-	if opReturnCount != 1 {
-		return nil
+	if opReturnCount == 0 {
+		return nil, fmt.Errorf("BTC transaction %s missing OP_RETURN output", tx.TxID)
 	}
 
-	// Parse OP_RETURN data inline (matches TypeScript parseOpReturnDataInline)
-	opReturnData := m.parseOpReturnDataInline(opReturnOutput.ScriptPubKey, tx.TxID)
-	if opReturnData == nil {
-		return nil
+	// Parse OP_RETURN data (matches TypeScript parseOpReturnDataInline)
+	opReturnData, err := m.parseOpReturnData(opReturnOutput.ScriptPubKey, tx.TxID)
+	if err != nil {
+		return nil, fmt.Errorf("BTC transaction %s OP_RETURN parsing failed: %w", tx.TxID, err)
+	}
+
+	// Validator address should always be present with new parsing logic
+	if opReturnData.ValidatorAddress == "" {
+		return nil, fmt.Errorf("BTC transaction %s missing validator address in OP_RETURN", tx.TxID)
+	}
+
+	// Validate validator is registered for bootstrap
+	isRegistered, err := m.isValidatorRegistered(opReturnData.ValidatorAddress)
+	if err != nil {
+		return nil, fmt.Errorf("BTC transaction %s validator registration check failed: %w", tx.TxID, err)
+	}
+
+	if !isRegistered {
+		return nil, fmt.Errorf("BTC transaction %s validator %s is not registered for bootstrap", tx.TxID, opReturnData.ValidatorAddress)
 	}
 
 	// Convert to BTCOPReturnData format
@@ -500,7 +508,7 @@ func (m *Module) isValidDepositTransaction(tx types.BTCTx) *BTCOPReturnData {
 		ValidatorAddress: opReturnData.ValidatorAddress,
 	}
 
-	return result
+	return result, nil
 }
 
 // isValidValidatorAddress validates if a string is a valid validator address (bech32 format with 'im' prefix)
@@ -526,107 +534,79 @@ type OpReturnData struct {
 	ValidatorAddress    string
 }
 
-// parseOpReturnDataInline parses and validates OP_RETURN data from Bitcoin transaction output
-// Compatible with both formats:
-// 1. Original format: 6a14{20 bytes imuachain} (only imua address)
-// 2. Extended format: 6a3d{20 bytes imuachain}{41 bytes validator} (imua + validator addresses)
-func (m *Module) parseOpReturnDataInline(scriptPubKey, txid string) *OpReturnData {
+// parseOpReturnData parses and validates OP_RETURN data from Bitcoin transaction output
+// Required format: 6a3d{20 bytes imuachain}{41 bytes validator} (imua + validator addresses)
+// All bootstrap transactions must include validator information
+func (m *Module) parseOpReturnData(scriptPubKey, txid string) (*OpReturnData, error) {
 	// Check if it starts with OP_RETURN prefix
 	if !strings.HasPrefix(scriptPubKey, "6a") {
-		return nil
+		return nil, fmt.Errorf("invalid OP_RETURN prefix: expected '6a', got %s", scriptPubKey[:2])
 	}
 
 	// Extract length byte and data
 	if len(scriptPubKey) < 6 {
-		return nil
+		return nil, fmt.Errorf("OP_RETURN script too short: %d bytes", len(scriptPubKey))
 	}
 
 	lengthHex := scriptPubKey[2:4]
 	length, err := strconv.ParseInt(lengthHex, 16, 64)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("failed to parse OP_RETURN length: %s", err)
 	}
 
 	hexOpReturnData := scriptPubKey[4:]
 
 	// Validate data length matches declared length
 	if len(hexOpReturnData) != int(length)*2 {
-		return nil
+		return nil, fmt.Errorf("OP_RETURN data length mismatch: declared %d bytes, got %d hex chars", length, len(hexOpReturnData))
 	}
 
-	// Handle different formats based on data length
-	if length == 20 {
-		// Original format: only IMUA address (20 bytes)
-		imuachainAddressHex := strings.ToLower("0x" + hexOpReturnData)
-
-		// Validate IMUA address format (basic hex validation)
-		if !isValidEthereumAddress(imuachainAddressHex) {
-			return nil
-		}
-
-		return &OpReturnData{
-			ImuachainAddressHex: imuachainAddressHex,
-			ValidatorAddress:    "", // Empty string when no validator address
-		}
-	} else if length == 61 {
-		// Extended format: IMUA address (20 bytes) + validator address (41 bytes)
-		imuachainAddressHex := strings.ToLower("0x" + hexOpReturnData[:40])
-
-		// Validate IMUA address format
-		if !isValidEthereumAddress(imuachainAddressHex) {
-			return nil
-		}
-
-		validatorAddressHex := hexOpReturnData[40:]
-
-		// Decode validator address from hex
-		validatorBytes, err := hex.DecodeString(validatorAddressHex)
-		if err != nil {
-			return &OpReturnData{
-				ImuachainAddressHex: imuachainAddressHex,
-				ValidatorAddress:    "",
-			}
-		}
-
-		// Check if the bytes contain only printable ASCII characters (bech32 addresses should be ASCII)
-		for _, b := range validatorBytes {
-			if b < 32 || b > 126 {
-				return &OpReturnData{
-					ImuachainAddressHex: imuachainAddressHex,
-					ValidatorAddress:    "",
-				}
-			}
-		}
-
-		validatorAddress := string(validatorBytes)
-
-		// Additional format validation - bech32 addresses should only contain alphanumeric characters
-		for _, char := range validatorAddress {
-			if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9')) {
-				return &OpReturnData{
-					ImuachainAddressHex: imuachainAddressHex,
-					ValidatorAddress:    "",
-				}
-			}
-		}
-
-		// Validate the validator address format (should be bech32 with 'im' prefix)
-		if !m.isValidValidatorAddress(validatorAddress) {
-			// Return with empty validator address when invalid
-			return &OpReturnData{
-				ImuachainAddressHex: imuachainAddressHex,
-				ValidatorAddress:    "",
-			}
-		}
-
-		return &OpReturnData{
-			ImuachainAddressHex: imuachainAddressHex,
-			ValidatorAddress:    validatorAddress,
-		}
-	} else {
-		// Unsupported format
-		return nil
+	// Only support extended format with validator information
+	if length != 61 {
+		return nil, fmt.Errorf("unsupported OP_RETURN data length: expected 61 bytes (IMUA + validator), got %d bytes", length)
 	}
+
+	// Extended format: IMUA address (20 bytes) + validator address (41 bytes)
+	imuachainAddressHex := strings.ToLower("0x" + hexOpReturnData[:40])
+
+	// Validate IMUA address format
+	if !isValidEthereumAddress(imuachainAddressHex) {
+		return nil, fmt.Errorf("invalid IMUA address format: %s", imuachainAddressHex)
+	}
+
+	validatorAddressHex := hexOpReturnData[40:]
+
+	// Decode validator address from hex
+	validatorBytes, err := hex.DecodeString(validatorAddressHex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode validator address from hex: %s", err)
+	}
+
+	// Check if the bytes contain only printable ASCII characters (bech32 addresses should be ASCII)
+	for _, b := range validatorBytes {
+		if b < 32 || b > 126 {
+			return nil, fmt.Errorf("validator address contains non-printable character: %d", b)
+		}
+	}
+
+	validatorAddress := string(validatorBytes)
+
+	// Additional format validation - bech32 addresses should only contain alphanumeric characters
+	for _, char := range validatorAddress {
+		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9')) {
+			return nil, fmt.Errorf("validator address contains invalid character: %c", char)
+		}
+	}
+
+	// Validate the validator address format (should be bech32 with 'im1' prefix and correct length)
+	if len(validatorAddress) != 41 || !strings.HasPrefix(validatorAddress, "im1") {
+		return nil, fmt.Errorf("invalid validator address format: expected 41 chars starting with 'im1', got %d chars starting with %s", len(validatorAddress), validatorAddress[:3])
+	}
+
+	return &OpReturnData{
+		ImuachainAddressHex: imuachainAddressHex,
+		ValidatorAddress:    validatorAddress,
+	}, nil
 }
 
 // isValidEthereumAddress validates if a string is a valid Ethereum address format
@@ -875,170 +855,10 @@ func (m *Module) processBTCTxWithTransactionAndData(tx types.BTCTx, currentHeigh
 	})
 }
 
-// processBTCTx processes a single BTC transaction
-func (m *Module) processBTCTx(tx types.BTCTx, currentHeight int64) error {
-	// Check confirmations
-	if !tx.Status.Confirmed || tx.Status.BlockHeight <= 0 {
-		return nil // Skip unconfirmed transactions
-	}
-
-	confirmations := currentHeight - tx.Status.BlockHeight + 1
-	if confirmations < int64(m.Config.BTCMinConfirmations) {
-		return nil // Not enough confirmations
-	}
-
-	// Validate transaction
-	isValid, opReturnData, err := m.validateBTCTx(tx)
-	if err != nil {
-		return fmt.Errorf("error validating BTC transaction: %s", err)
-	}
-
-	if !isValid {
-		return nil // Invalid transaction
-	}
-
-	// Save transaction data to database
-	return m.saveBTCTransaction(tx, opReturnData)
-}
-
-// validateBTCTx validates a BTC transaction for bootstrap deposits
-func (m *Module) validateBTCTx(tx types.BTCTx) (bool, *BTCOPReturnData, error) {
-	// Check if it's from vault (should not be)
-	for _, vin := range tx.Vin {
-		if normalizeAddress(vin.Prevout.ScriptPubKeyAddr) ==
-			normalizeAddress(m.Config.BTCVaultAddr) {
-			return false, nil, nil // From vault, invalid
-		}
-	}
-
-	// Find vault output
-	var vaultOutput *types.BTCVout
-	for i, vout := range tx.Vout {
-		if normalizeAddress(vout.ScriptPubKeyAddr) ==
-			normalizeAddress(m.Config.BTCVaultAddr) &&
-			vout.Value >= m.Config.BTCMinAmount {
-			vaultOutput = &tx.Vout[i] // Use index to avoid address reuse issues
-			break
-		}
-	}
-
-	if vaultOutput == nil {
-		return false, nil, nil // No valid vault output
-	}
-
-	// Find OP_RETURN output
-	var opReturnOutput *types.BTCVout
-	for i, vout := range tx.Vout {
-		if vout.ScriptPubKeyType == "op_return" {
-			opReturnOutput = &tx.Vout[i] // Use index to avoid address reuse issues
-			break
-		}
-	}
-
-	if opReturnOutput == nil {
-		return false, nil, nil // No OP_RETURN output
-	}
-
-	// Parse OP_RETURN data
-	opReturnData, err := parseBTCOPReturn(opReturnOutput.ScriptPubKey)
-	if err != nil {
-		log.Err(err).Str("txid", tx.TxID).Msg("failed to parse OP_RETURN")
-		return false, nil, nil
-	}
-
-	// Validate validator address
-	if !m.isValidValidatorAddress(opReturnData.ValidatorAddress) {
-		log.Warn().Str("txid", tx.TxID).Str("validator", opReturnData.ValidatorAddress).
-			Msg("invalid validator address")
-		return false, nil, nil
-	}
-
-	// Check if validator is registered
-	isRegistered, err := m.isValidatorRegistered(opReturnData.ValidatorAddress)
-	if err != nil {
-		return false, nil, fmt.Errorf("error checking validator registration: %s", err)
-	}
-
-	if !isRegistered {
-		log.Warn().Str("txid", tx.TxID).Str("validator", opReturnData.ValidatorAddress).
-			Msg("validator not registered")
-		return false, nil, nil
-	}
-
-	// Validate address binding (1-1 mapping between Bitcoin and Imuachain addresses)
-	senderAddr := ""
-	for _, vin := range tx.Vin {
-		if vin.Prevout.ScriptPubKeyAddr != "" {
-			senderAddr = vin.Prevout.ScriptPubKeyAddr
-			break
-		}
-	}
-	if senderAddr == "" {
-		log.Warn().Str("txid", tx.TxID).Msg("no sender address found")
-		return false, nil, nil
-	}
-
-	if !m.validateBTCAddressBinding(senderAddr, opReturnData.ImuachainAddress, tx.TxID) {
-		return false, nil, nil
-	}
-
-	return true, opReturnData, nil
-}
-
 // BTCOPReturnData represents parsed OP_RETURN data
 type BTCOPReturnData struct {
 	ImuachainAddress string
 	ValidatorAddress string
-}
-
-// parseBTCOPReturn parses OP_RETURN data from BTC transaction
-func parseBTCOPReturn(scriptPubKey string) (*BTCOPReturnData, error) {
-	// Validate OP_RETURN format
-	if !strings.HasPrefix(scriptPubKey, "6a3d") {
-		return nil, fmt.Errorf("invalid OP_RETURN prefix")
-	}
-
-	hexData := scriptPubKey[4:]
-	if len(hexData) != 122 {
-		return nil, fmt.Errorf("invalid OP_RETURN data length: expected 122, got %d", len(hexData))
-	}
-
-	// Extract imuachain address (first 40 hex chars = 20 bytes)
-	imuachainHex := "0x" + hexData[:40]
-	if !common.IsHexAddress(imuachainHex) {
-		return nil, fmt.Errorf("invalid imuachain address format: %s", imuachainHex)
-	}
-
-	// Extract validator address (remaining 41 bytes as UTF-8 string)
-	validatorHex := hexData[40:]
-	validatorBytes, err := hex.DecodeString(validatorHex)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode validator address: %s", err)
-	}
-
-	validatorAddress := string(validatorBytes)
-	// Remove null bytes and validate length
-	validatorAddress = strings.TrimRight(validatorAddress, "\x00")
-	if len(validatorAddress) != 41 {
-		return nil, fmt.Errorf("invalid validator address length: expected 41, got %d", len(validatorAddress))
-	}
-
-	// Additional validation: check for valid bech32 characters and prefix
-	if !strings.HasPrefix(validatorAddress, "im") {
-		return nil, fmt.Errorf("invalid validator address prefix: expected 'im', got %s", validatorAddress[:2])
-	}
-
-	// Validate bech32 character set
-	for _, char := range validatorAddress {
-		if !((char >= 'a' && char <= 'z') || (char >= '0' && char <= '9')) {
-			return nil, fmt.Errorf("invalid character in validator address: %c", char)
-		}
-	}
-
-	return &BTCOPReturnData{
-		ImuachainAddress: normalizeAddress(imuachainHex),
-		ValidatorAddress: strings.TrimSpace(validatorAddress),
-	}, nil
 }
 
 // isValidatorRegistered checks if validator is registered in bootstrap contract
@@ -1469,8 +1289,8 @@ func (m *Module) parseXRPTransactionFromAccountTx(txData map[string]interface{})
 	}
 
 	// Perform detailed validation: memo parsing and amount checks
-	if !m.validateAndParseBootstrapXRPTx(tx) {
-		return nil, nil // Return nil for invalid transactions (not an error)
+	if err := m.validateAndParseBootstrapXRPTx(tx); err != nil {
+		return nil, fmt.Errorf("bootstrap XRP transaction validation failed: %w", err)
 	}
 
 	return tx, nil
@@ -1500,61 +1320,60 @@ func (m *Module) processXRPTxWithTransaction(tx types.XRPTransaction, currentLed
 }
 
 // validateAndParseBootstrapXRPTx validates XRP transaction memo and amount (basic checks already done)
-// Returns true if the transaction is valid for bootstrap and addresses are set
-func (m *Module) validateAndParseBootstrapXRPTx(tx *types.XRPTransaction) bool {
+// Returns error if the transaction is invalid for bootstrap, nil if valid
+func (m *Module) validateAndParseBootstrapXRPTx(tx *types.XRPTransaction) error {
 	// Must be XRP payment (not token)
 	amountStr, ok := tx.Tx.Amount.(string)
 	if !ok {
-		return false // Token payment
+		return fmt.Errorf("invalid amount type: expected string for XRP payment")
 	}
 
 	// Check minimum amount
 	amount, err := strconv.ParseInt(amountStr, 10, 64)
 	if err != nil {
-		return false
+		return fmt.Errorf("failed to parse XRP amount %s: %w", amountStr, err)
 	}
 
 	if amount < m.Config.XRPMinAmount {
-		return false
+		return fmt.Errorf("XRP amount %d below minimum required %d", amount, m.Config.XRPMinAmount)
 	}
 
 	// Must have memo with validator info
 	if len(tx.Tx.Memos) == 0 {
-		return false
+		return fmt.Errorf("XRP transaction missing memo data for bootstrap")
 	}
 
 	// Parse memo data
 	memoData, err := parseXRPMemo(tx.Tx.Memos)
 	if err != nil {
-		return false
+		return fmt.Errorf("failed to parse XRP memo: %w", err)
 	}
 
 	// Validate validator address
 	if !m.isValidValidatorAddress(memoData.ValidatorAddress) {
-		return false
+		return fmt.Errorf("invalid validator address in XRP memo: %s", memoData.ValidatorAddress)
 	}
 
 	// Check if validator is registered
 	isRegistered, err := m.isValidatorRegistered(memoData.ValidatorAddress)
 	if err != nil {
-		log.Err(err).Str("hash", tx.Hash).Msg("error checking validator registration")
-		return false
+		return fmt.Errorf("failed to check validator registration for %s: %w", memoData.ValidatorAddress, err)
 	}
 
 	if !isRegistered {
-		return false
+		return fmt.Errorf("validator %s is not registered for bootstrap", memoData.ValidatorAddress)
 	}
 
 	// Validate 1-1 address binding for XRP
 	if !m.validateXRPAddressBinding(tx.Tx.Account, memoData.ImuachainAddress, tx.Hash) {
-		return false
+		return fmt.Errorf("XRP address binding validation failed for account %s and imuachain address %s", tx.Tx.Account, memoData.ImuachainAddress)
 	}
 
 	// Set parsed addresses in the transaction struct
 	tx.ImuachainAddress = memoData.ImuachainAddress
 	tx.ValidatorAddress = memoData.ValidatorAddress
 
-	return true
+	return nil
 }
 
 // XRPMemoData represents parsed memo data
@@ -1577,24 +1396,39 @@ func parseXRPMemo(memos []types.XRPMemo) (*XRPMemoData, error) {
 			continue
 		}
 
-		// Validate minimum length (41 bytes validator + 20 bytes ethereum address)
-		if len(buffer) < 61 {
+		// Validate minimum length (40 chars eth hex + 41 chars validator = 81 chars)
+		if len(buffer) < 81 {
 			continue
 		}
 
-		// Extract ethereum address (last 20 bytes)
-		ethBytes := buffer[len(buffer)-20:]
-		imuachainAddress := "0x" + hex.EncodeToString(ethBytes)
+		// The buffer is a concatenated string: eth_hex(40) + validator_ascii(41)
+		bufferStr := string(buffer)
+
+		// Extract ethereum address (first 40 characters as hex)
+		ethHex := bufferStr[:40]
+		imuachainAddress := "0x" + ethHex
 
 		if !common.IsHexAddress(imuachainAddress) {
 			continue
 		}
 
-		// Extract validator address (remaining bytes before ethereum address)
-		validatorBytes := buffer[:len(buffer)-20]
-		validatorAddress := string(validatorBytes)
+		// Extract validator address (remaining 41 characters)
+		validatorAddress := bufferStr[40:]
 
-		if len(validatorAddress) != 41 {
+		// Basic validation of validator address format
+		if len(validatorAddress) != 41 || !strings.HasPrefix(validatorAddress, "im1") {
+			continue
+		}
+
+		// Validate validator address characters (basic bech32 format)
+		validChars := true
+		for _, char := range validatorAddress {
+			if !((char >= 'a' && char <= 'z') || (char >= '0' && char <= '9')) {
+				validChars = false
+				break
+			}
+		}
+		if !validChars {
 			continue
 		}
 
