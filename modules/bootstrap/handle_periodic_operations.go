@@ -292,35 +292,34 @@ func (m *Module) updatePricesAndTVL() error {
 			log.Error().Str("stakingTotalAmount", t.StakingTotalAmount).Msg("failed to parse the staking amount to a big int")
 			stakingAmountInt = sdkmath.ZeroInt()
 		}
-		price, err := client.NewAveragePriceService().
-			Symbol(fmt.Sprintf("%sUSDT", t.Symbol)).
-			Do(m.ctx)
-		if err == nil {
-			// update the price
-			err = m.database.SaveBootstrapTokenPrice(t.AssetID, price.Price)
-			if err != nil {
-				return err
-			}
-			// calculate the total USD value of this asset
-			priceDec, err := sdkmath.LegacyNewDecFromStr(price.Price)
-			if err != nil {
-				log.Err(err).Str("binancePrice", price.Price).Msg("failed to parse the binance price to a big legacyDec")
-				// don't return to continue addressing the other assets
-				continue
-			}
-			divisor := sdkmath.NewIntWithDecimal(1, int(t.Decimals)) // #nosec G115
-			usdValue := priceDec.MulInt(stakingAmountInt).QuoInt(divisor)
-			totalTVL.AddMut(usdValue)
-			continue
-		}
 
-		// fetch the price from ChainLink if failed to fetch price from Binance
 		oracleFeedAddr, ok := oracleFeedsMap[t.AssetID]
 		if !ok {
-			log.Error().Str("module", "bootstrap").Str("assetID", t.AssetID).Str("name", t.Name).
-				Msg("the token oracle feed info hasn't been configured")
-			// don't return to continue updating prices for the other assets
+			price, err := client.NewAveragePriceService().
+				Symbol(fmt.Sprintf("%sUSDT", t.Symbol)).
+				Do(m.ctx)
+			if err != nil {
+				log.Err(err).Str("module", "bootstrap").Str("assetID", t.AssetID).Str("name", t.Name).Str("symbol", t.Symbol).
+					Msg("failed to get the asset price from binance")
+			} else {
+				// update the price
+				err = m.database.SaveBootstrapTokenPrice(t.AssetID, price.Price)
+				if err != nil {
+					return err
+				}
+				// calculate the total USD value of this asset
+				priceDec, err := sdkmath.LegacyNewDecFromStr(price.Price)
+				if err != nil {
+					log.Err(err).Str("binancePrice", price.Price).Msg("failed to parse the binance price to a big legacyDec")
+					// don't return to continue addressing the other assets
+					continue
+				}
+				divisor := sdkmath.NewIntWithDecimal(1, int(t.Decimals)) // #nosec G115
+				usdValue := priceDec.MulInt(stakingAmountInt).QuoInt(divisor)
+				totalTVL.AddMut(usdValue)
+			}
 		} else {
+			// fetch the price from ChainLink
 			aggregatorContract, err := aggregatorv3.NewAggregatorV3Interface(oracleFeedAddr, m.EthHTTPClient)
 			if err != nil {
 				return err

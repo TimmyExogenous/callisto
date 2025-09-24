@@ -15,10 +15,10 @@ type Config struct {
 	BootstrapAddr string `yaml:"bootstrap_addr"`
 	// The following UpdateIntervals specify the interval in minutes at which the
 	// bootstrap states are automatically refreshed.
-	ETHUpdateInterval   int64                                `yaml:"eth_update_interval"`
-	BTCUpdateInterval   int64                                `yaml:"btc_update_interval"`
-	XRPUpdateInterval   int64                                `yaml:"xrp_update_interval"`
-	PriceUpdateInterval int64                                `yaml:"price_update_interval"`
+	ETHUpdateInterval   int                                  `yaml:"eth_update_interval"`
+	BTCUpdateInterval   int                                  `yaml:"btc_update_interval"`
+	XRPUpdateInterval   int                                  `yaml:"xrp_update_interval"`
+	PriceUpdateInterval int                                  `yaml:"price_update_interval"`
 	ETHLZChainID        uint64                               `yaml:"eth_lz_chain_id"`
 	ClientChainInfos    []callistotypes.BootstrapClientChain `yaml:"client_chain_infos"`
 	StakingTokenInfos   []callistotypes.BootstrapToken       `yaml:"staking_token_infos"`

@@ -31,6 +31,5 @@ func (m *Module) RunAdditionalOperations() error {
 			return err
 		}
 	}
-	// Fetch all states at indexer startup.
-	return m.refetchETHStates()
+	return nil
 }
