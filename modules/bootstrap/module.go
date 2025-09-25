@@ -16,7 +16,6 @@ import (
 	"github.com/forbole/callisto/v4/modules/bootstrap/storage_binding"
 	"github.com/forbole/callisto/v4/types"
 	"github.com/forbole/juno/v5/types/config"
-
 	"github.com/forbole/juno/v5/modules"
 )
 
@@ -27,7 +26,7 @@ var (
 
 type Module struct {
 	database      *callistodb.Db
-	EthHttpClient *ethclient.Client
+	EthHTTPClient *ethclient.Client
 	EthWSClient   *ethclient.Client
 	XrpClient     *xrpl.Client
 	Config        Config
@@ -36,7 +35,6 @@ type Module struct {
 	// directly using the http package.
 	ctx               context.Context
 	bootstrapSession  *bootstrap_binding.BootstrapCallerSession
-	storageSession    *storage_binding.BootstrapStorageCallerSession
 	bootstrapFilterer *bootstrap_binding.BootstrapFilterer
 	storageFilterer   *storage_binding.BootstrapStorageFilterer
 	// Address mappings for 1-1 binding validation
@@ -67,7 +65,7 @@ func NewModule(
 	if err != nil {
 		panic(err)
 	}
-	ethHttpClient := ethclient.NewClient(httpRC)
+	ethHTTPClient := ethclient.NewClient(httpRC)
 
 	websocketRC, err := rpc.DialContext(context.Background(), bootstrapCfg.ETHWebsocket)
 	if err != nil {
@@ -83,7 +81,7 @@ func NewModule(
 
 	// create the sessions for bootstrap and storage contracts.
 	ctx := context.Background()
-	bootstrapCaller, err := bootstrap_binding.NewBootstrapCaller(bootstrapAddr, ethHttpClient)
+	bootstrapCaller, err := bootstrap_binding.NewBootstrapCaller(bootstrapAddr, ethHTTPClient)
 	if err != nil {
 		panic(fmt.Errorf("failed to new bootstrap caller,err:%s", err))
 	}
@@ -91,23 +89,11 @@ func NewModule(
 		Contract: bootstrapCaller,
 		CallOpts: bind.CallOpts{Context: ctx},
 	}
-	storageCaller, err := storage_binding.NewBootstrapStorageCaller(bootstrapAddr, ethHttpClient)
-	if err != nil {
-		panic(fmt.Errorf("failed to new bootstrap storage caller,err:%s", err))
-	}
-	storageSession := &storage_binding.BootstrapStorageCallerSession{
-		Contract: storageCaller,
-		CallOpts: bind.CallOpts{Context: ctx},
-	}
 
 	// create the filterer to subscribe all related events
 	bootstrapFilterer, err := bootstrap_binding.NewBootstrapFilterer(bootstrapAddr, ethWSClient)
 	if err != nil {
 		panic(fmt.Errorf("failed to new bootstrap filterer,err:%s", err))
-	}
-	storageFilterer, err := storage_binding.NewBootstrapStorageFilterer(bootstrapAddr, ethWSClient)
-	if err != nil {
-		panic(fmt.Errorf("failed to new bootstrap storage filterer,err:%s", err))
 	}
 
 	module := &Module{
@@ -124,7 +110,6 @@ func NewModule(
 		storageFilterer:    storageFilterer,
 		btcAddressMappings: make(map[string]string),
 		xrpAddressMappings: make(map[string]string),
-		// Note: mutexes are zero-valued, no need to initialize explicitly
 	}
 
 	// Initialize address bindings from database

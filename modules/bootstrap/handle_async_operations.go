@@ -1,52 +1,103 @@
 package bootstrap
 
 import (
-	"context"
 	"fmt"
+	"math/big"
+	"time"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	ethcoretypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/forbole/callisto/v4/modules/bootstrap/bootstrap_binding"
 	"github.com/forbole/callisto/v4/types"
 	assetstypes "github.com/imua-xyz/imuachain/x/assets/types"
 	"github.com/rs/zerolog/log"
-	"math/big"
-	"time"
 )
 
-func (m *Module) getSenderByTransactionRawLog(ctx context.Context, rawLog ethcoretypes.Log) (common.Address, error) {
-	tx, _, err := m.EthHttpClient.TransactionByHash(ctx, rawLog.TxHash)
+func (m *Module) updateStatesAfterStakerAssetChange(stakerAddr, assetAddr common.Address) (string, string, error) {
+	stakerID, assetID, err := m.updateStakerAsset(stakerAddr, assetAddr)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("failed to get the commission update transaction,err:%s", err)
+		return "", "", err
 	}
-	txSender, err := m.EthHttpClient.TransactionSender(ctx, tx, rawLog.BlockHash, rawLog.TxIndex)
+
+	// update the total deposit amount in asset states
+	assetDepositAmount, err := m.bootstrapSession.DepositsByToken(assetAddr)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("failed to get the sender of commission update transaction,err:%s", err)
+		return "", "", err
 	}
-	return txSender, nil
+
+	err = m.database.UpdateBootstrapTokenDepositAmount(assetID, assetDepositAmount.String())
+	if err != nil {
+		return "", "", err
+	}
+	return stakerID, assetID, nil
 }
 
-func (m *Module) updateStatesAfterDepositOrClaim(stakerAddr, assetAddr common.Address) error {
-	totalDepositAmount, err := m.bootstrapSession.TotalDepositAmounts(stakerAddr, assetAddr)
+func (m *Module) updateStatesAfterDelegationChange(stakerAddr, assetAddr common.Address, validatorAddr string) error {
+	// update the states of staker assets
+	stakerID, assetID, err := m.updateStatesAfterStakerAssetChange(stakerAddr, assetAddr)
 	if err != nil {
 		return err
 	}
-	withdrawableAmount, err := m.bootstrapSession.WithdrawableAmounts(stakerAddr, assetAddr)
+
+	delegationAmount, err := m.bootstrapSession.Delegations(stakerAddr, validatorAddr, assetAddr)
 	if err != nil {
 		return err
 	}
-	if totalDepositAmount.Cmp(withdrawableAmount) < 0 {
-		return fmt.Errorf("total deposit amount:%s is less than withdrawable amount:%s", totalDepositAmount, withdrawableAmount)
-	}
-	delegationAmount := big.NewInt(0).Sub(totalDepositAmount, withdrawableAmount)
-	stakerID, assetID := assetstypes.GetStakerIDAndAssetID(m.Config.ETHLZChainID, stakerAddr[:], assetAddr[:])
-	err = m.database.SaveBootstrapStakerAsset(&types.BootstrapStakerAsset{
+
+	// update the delegation states
+	err = m.database.SaveBootstrapDelegationState(&types.BootstrapDelegationState{
 		StakerID:     stakerID,
 		AssetID:      assetID,
-		Deposited:    totalDepositAmount.String(),
-		Withdrawable: withdrawableAmount.String(),
+		OperatorAddr: validatorAddr,
 		Delegated:    delegationAmount.String(),
+		UpdatedAt:    time.Now(),
+	})
+	if err != nil {
+		return err
+	}
+
+	// update the states of operator assets
+	operatorAmount, err := m.bootstrapSession.DelegationsByValidator(validatorAddr, assetAddr)
+	if err != nil {
+		return err
+	}
+	validatorCount, err := m.bootstrapSession.GetValidatorsCount()
+	if err != nil {
+		return err
+	}
+
+	var validatorETHAddr common.Address
+	for i := int64(0); i < validatorCount.Int64(); i++ {
+		tmpValidatorETHAddr, err := m.bootstrapSession.RegisteredValidators(big.NewInt(i))
+		if err != nil {
+			return err
+		}
+		tmpValidatorAddr, err := m.bootstrapSession.EthToImAddress(tmpValidatorETHAddr)
+		if err != nil {
+			return err
+		}
+		if tmpValidatorAddr == validatorAddr {
+			validatorETHAddr = tmpValidatorETHAddr
+			break
+		}
+	}
+	if validatorETHAddr == (common.Address{}) {
+		return fmt.Errorf("can't find the validator in the registered list")
+	}
+
+	// get the self delegation amount
+	selfDelegation, err := m.bootstrapSession.Delegations(validatorETHAddr, validatorAddr, assetAddr)
+	if err != nil {
+		return err
+	}
+
+	err = m.database.SaveBootstrapOperatorAsset(&types.BootstrapOperatorAsset{
+		OperatorAddr: validatorAddr,
+		AssetID:      assetID,
+		TotalAmount:  operatorAmount.String(),
+		SelfAmount:   selfDelegation.String(),
+		OtherAmount:  big.NewInt(0).Sub(operatorAmount, selfDelegation).String(),
 		UpdatedAt:    time.Now(),
 	})
 	if err != nil {
@@ -89,7 +140,7 @@ func (m *Module) RunAsyncOperations() {
 	if err != nil {
 		panic(fmt.Errorf("failed to watch whitelist token addition,err:%s", err))
 	}
-	defer keyReplaceSub.Unsubscribe()
+	defer newAssetSub.Unsubscribe()
 
 	// create event channels for deposit, claim, delegation and undelegation
 	depositCh := make(chan *bootstrap_binding.BootstrapDepositResult)
@@ -107,14 +158,14 @@ func (m *Module) RunAsyncOperations() {
 	defer claimSub.Unsubscribe()
 
 	delegationCh := make(chan *bootstrap_binding.BootstrapDelegateResult)
-	delegationSub, err := m.bootstrapFilterer.WatchDelegateResult(commonWatchCtx, delegationCh, nil, nil, nil)
+	delegationSub, err := m.bootstrapFilterer.WatchDelegateResult(commonWatchCtx, delegationCh, nil, nil)
 	if err != nil {
 		panic(fmt.Errorf("failed to watch token delegation,err:%s", err))
 	}
 	defer delegationSub.Unsubscribe()
 
 	undelegationCh := make(chan *bootstrap_binding.BootstrapUndelegateResult)
-	undelegationSub, err := m.bootstrapFilterer.WatchUndelegateResult(commonWatchCtx, undelegationCh, nil, nil, nil)
+	undelegationSub, err := m.bootstrapFilterer.WatchUndelegateResult(commonWatchCtx, undelegationCh, nil, nil)
 	if err != nil {
 		panic(fmt.Errorf("failed to watch token undelegation,err:%s", err))
 	}
@@ -162,15 +213,9 @@ func (m *Module) RunAsyncOperations() {
 				log.Err(err).Msg("failed to saving the new validator")
 			}
 		case e := <-commissionUpdatedCh:
-			// get the tx sender as the validator ETH address
-			txSender, err := m.getSenderByTransactionRawLog(m.ctx, e.Raw)
+			err = m.database.UpdateCommissionRate(e.ValidatorAddress, e.NewRate.String())
 			if err != nil {
-				log.Err(err)
-				continue
-			}
-			err = m.database.UpdateCommissionRate(txSender.String(), e.NewRate.String())
-			if err != nil {
-				log.Err(err).Str("validatorEthAddr", txSender.String()).Msg("failed to update the commission rate")
+				log.Err(err).Str("validatorAddr", e.ValidatorAddress).Msg("failed to update the commission rate")
 			}
 		case e := <-keyReplaceCh:
 			err = m.database.UpdateConsensusPubKey(e.ValidatorAddress, hexutil.Encode(e.NewConsensusPublicKey[:]))
@@ -187,20 +232,22 @@ func (m *Module) RunAsyncOperations() {
 			for i := int64(0); i < tokenCount.Int64(); i++ {
 				tokenInfo, err := m.bootstrapSession.GetWhitelistedTokenAtIndex(big.NewInt(i))
 				if err != nil {
-					log.Err(err).Msg("failed to get the count of whitelisted tokens")
+					log.Err(err).Int64("index", i).Msg("failed to get the count of whitelisted tokens")
 					continue
 				}
 				if tokenInfo.TokenAddress == e.Token {
 					_, assetID := assetstypes.GetStakerIDAndAssetID(m.Config.ETHLZChainID, nil, e.Token[:])
-					err = m.database.SaveBootstrapToken(&types.BootstrapToken{
-						AssetID:            assetID,
-						Address:            e.Token.String(),
-						Name:               tokenInfo.Name,
-						Symbol:             tokenInfo.Symbol,
-						Decimals:           tokenInfo.Decimals,
-						UpdatedAt:          time.Now(),
-						LayerZeroChainID:   m.Config.ETHLZChainID,
+					err = m.database.SaveBootstrapToken(&types.BootstrapTokenState{
+						BootstrapToken: types.BootstrapToken{
+							AssetID:   assetID,
+							Address:   e.Token.String(),
+							Name:      tokenInfo.Name,
+							Symbol:    tokenInfo.Symbol,
+							Decimals:  tokenInfo.Decimals,
+							LZChainID: m.Config.ETHLZChainID,
+						},
 						StakingTotalAmount: big.NewInt(0).String(),
+						UpdatedAt:          time.Now(),
 					})
 					if err != nil {
 						log.Err(err).Str("token", e.Token.String()).Msg("failed to save the whitelist asset")
@@ -210,25 +257,33 @@ func (m *Module) RunAsyncOperations() {
 			}
 		case e := <-depositCh:
 			if e.Success {
-				err := m.updateStatesAfterDepositOrClaim(e.Depositor, e.Token)
+				_, _, err := m.updateStatesAfterStakerAssetChange(e.Depositor, e.Token)
 				if err != nil {
 					log.Err(err).Str("depositor", e.Depositor.String()).Str("token", e.Token.String()).Str("amount", e.Amount.String()).Msg("failed to handle the deposit event")
 				}
 			}
 		case e := <-claimCh:
 			if e.Success {
-				err := m.updateStatesAfterDepositOrClaim(e.Withdrawer, e.Token)
+				_, _, err := m.updateStatesAfterStakerAssetChange(e.Withdrawer, e.Token)
 				if err != nil {
 					log.Err(err).Str("withdrawer", e.Withdrawer.String()).Str("token", e.Token.String()).Str("amount", e.Amount.String()).Msg("failed to handle the claim event")
+				}
+			}
+		case e := <-delegationCh:
+			if e.Success {
+				err := m.updateStatesAfterDelegationChange(e.Delegator, e.Token, e.Delegatee)
+				if err != nil {
+					log.Err(err).Str("delegator", e.Delegator.String()).Str("token", e.Token.String()).Str("validator", e.Delegatee).Str("amount", e.Amount.String()).Msg("failed to handle the delegation event")
+				}
+			}
+		case e := <-undelegationCh:
+			if e.Success {
+				err := m.updateStatesAfterDelegationChange(e.Undelegator, e.Token, e.Undelegatee)
+				if err != nil {
+					log.Err(err).Str("undelegator", e.Undelegator.String()).Str("token", e.Token.String()).Str("validator", e.Undelegatee).Str("amount", e.Amount.String()).Msg("failed to handle the undelegation event")
 				}
 			}
 		}
 	}
 
-}
-
-// subscribeAndHandleEvents subscribes and handles all events from the bootstrap contract.
-func (m *Module) subscribeAndHandleEvents() error {
-
-	return nil
 }

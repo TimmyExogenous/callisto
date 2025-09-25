@@ -35,6 +35,15 @@ CREATE TABLE IF NOT EXISTS bootstrap_tokens
     CONSTRAINT fk_layer_zero_chain_id FOREIGN KEY (layer_zero_chain_id) REFERENCES bootstrap_client_chains (layer_zero_chain_id)
 );
 
+CREATE TABLE bootstrap_token_prices
+(
+    asset_id   TEXT PRIMARY KEY,
+    price      NUMERIC NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP WITHOUT TIME ZONE,
+    CONSTRAINT fk_asset_id FOREIGN KEY (asset_id) REFERENCES bootstrap_tokens (asset_id)
+);
+
+
 CREATE TABLE IF NOT EXISTS bootstrap_staker_assets
 (
     staker_id    TEXT    NOT NULL,
@@ -80,6 +89,7 @@ CREATE TABLE IF NOT EXISTS bootstrap_operator_assets
     CONSTRAINT fk_operator FOREIGN KEY (operator_addr) REFERENCES bootstrap_validator (validator_im_addr),
     CONSTRAINT chk_total_amount CHECK (total_amount = self_amount + other_amount)
 );
+
 CREATE INDEX IF NOT EXISTS idx_bootstrap_operator_assets_operator ON bootstrap_operator_assets (operator_addr);
 CREATE INDEX IF NOT EXISTS idx_bootstrap_operator_assets_asset_id ON bootstrap_operator_assets (asset_id);
 
@@ -121,3 +131,11 @@ CREATE TABLE IF NOT EXISTS bootstrap_address_bindings
 
 CREATE INDEX IF NOT EXISTS idx_address_bindings_target ON bootstrap_address_bindings (target_addr);
 CREATE INDEX IF NOT EXISTS idx_address_bindings_created ON bootstrap_address_bindings (created_at);
+
+CREATE TABLE bootstrap_statistics
+(
+    one_row_id BOOLEAN NOT NULL DEFAULT TRUE PRIMARY KEY,
+    tvl        NUMERIC NOT NULL,
+    updated_at TIMESTAMP WITHOUT TIME ZONE,
+    CHECK (one_row_id)
+);

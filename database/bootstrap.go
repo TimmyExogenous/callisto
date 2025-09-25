@@ -3,8 +3,10 @@ package database
 import (
 	"database/sql"
 	"fmt"
-	"github.com/forbole/callisto/v4/types"
+	"strings"
 	"time"
+
+	"github.com/forbole/callisto/v4/types"
 )
 
 func (db *Db) SaveBootstrapValidator(v *types.BootstrapValidator) error {
@@ -47,23 +49,23 @@ SET validator_im_addr   = EXCLUDED.validator_im_addr,
 }
 
 // UpdateCommissionRate updates the commission rate for a bootstrap validator identified
-// by validatorEthAddr. It also updates the updated_at timestamp to the current time.
-func (db *Db) UpdateCommissionRate(validatorEthAddr string, newRate string) error {
+// by validatorAddr. It also updates the updated_at timestamp to the current time.
+func (db *Db) UpdateCommissionRate(validatorAddr string, newRate string) error {
 	stmt := `
 UPDATE bootstrap_validator
 SET commission_rate     = $1,
     updated_at          = $2
-WHERE validator_eth_addr = $3;
+WHERE validator_im_addr = $3;
 `
 
 	_, err := db.SQL.Exec(
 		stmt,
 		newRate,
 		time.Now(),
-		validatorEthAddr,
+		validatorAddr,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to update commission rate for %s: %w", validatorEthAddr, err)
+		return fmt.Errorf("failed to update commission rate for %s: %w", validatorAddr, err)
 	}
 	return nil
 }
@@ -94,7 +96,7 @@ func (db *Db) SaveBootstrapClientChain(c *types.BootstrapClientChain) error {
 	stmt := `
 INSERT INTO bootstrap_client_chains (
     name, meta_info, layer_zero_chain_id, updated_at
-) VALUES ($1, $2, $3, $4)
+) VALUES ($1, $2, $3, now())
 ON CONFLICT (layer_zero_chain_id) DO UPDATE
 SET name       = EXCLUDED.name,
     meta_info  = EXCLUDED.meta_info,
@@ -103,8 +105,7 @@ SET name       = EXCLUDED.name,
 	_, err := db.SQL.Exec(stmt,
 		c.Name,
 		c.MetaInfo,
-		c.LayerZeroChainID,
-		c.UpdatedAt,
+		c.LZChainID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save bootstrap client chain: %w", err)
@@ -112,7 +113,7 @@ SET name       = EXCLUDED.name,
 	return nil
 }
 
-func (db *Db) SaveBootstrapToken(t *types.BootstrapToken) error {
+func (db *Db) SaveBootstrapToken(t *types.BootstrapTokenState) error {
 	stmt := `
 INSERT INTO bootstrap_tokens (
     asset_id, name, symbol, address, decimals,
@@ -131,14 +132,70 @@ SET name                 = EXCLUDED.name,
 		t.AssetID,
 		t.Name,
 		t.Symbol,
-		t.Address,
+		strings.ToLower(t.Address),
 		t.Decimals,
-		t.LayerZeroChainID,
+		t.LZChainID,
 		t.StakingTotalAmount,
 		t.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save bootstrap token: %w", err)
+	}
+	return nil
+}
+
+func (db *Db) ListBootstrapTokens() ([]*types.BootstrapTokenState, error) {
+	stmt := `
+SELECT asset_id, name, symbol, address, decimals,
+       layer_zero_chain_id, staking_total_amount, updated_at
+FROM bootstrap_tokens;`
+
+	rows, err := db.SQL.Query(stmt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query bootstrap tokens: %w", err)
+	}
+	defer rows.Close()
+
+	var tokens []*types.BootstrapTokenState
+	for rows.Next() {
+		t := new(types.BootstrapTokenState)
+		err := rows.Scan(
+			&t.AssetID,
+			&t.Name,
+			&t.Symbol,
+			&t.Address,
+			&t.Decimals,
+			&t.LZChainID,
+			&t.StakingTotalAmount,
+			&t.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan bootstrap token: %w", err)
+		}
+		tokens = append(tokens, t)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration error: %w", err)
+	}
+
+	return tokens, nil
+}
+
+func (db *Db) UpdateBootstrapTokenDepositAmount(assetID string, amount string) error {
+	stmt := `
+UPDATE bootstrap_tokens
+SET staking_total_amount = $1,
+    updated_at = $2
+WHERE asset_id = $3;`
+
+	_, err := db.SQL.Exec(stmt,
+		amount,
+		time.Now(),
+		assetID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update staking_total_amount for asset_id=%s: %w", assetID, err)
 	}
 	return nil
 }
@@ -166,6 +223,22 @@ SET deposited    = EXCLUDED.deposited,
 		return fmt.Errorf("failed to save bootstrap staker asset: %w", err)
 	}
 	return nil
+}
+
+func (db *Db) BootstrapStakerAssetExists(stakerID, assetID string) (bool, error) {
+	stmt := `
+SELECT EXISTS(
+    SELECT 1 
+    FROM bootstrap_staker_assets 
+    WHERE staker_id = $1 AND asset_id = $2
+);`
+
+	var exists bool
+	err := db.SQL.QueryRow(stmt, stakerID, assetID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("failed to check bootstrap staker asset existence: %w", err)
+	}
+	return exists, nil
 }
 
 // DepositBootstrapStakerAsset increases the deposited and withdrawable amount
@@ -255,6 +328,22 @@ SET delegated  = EXCLUDED.delegated,
 	return nil
 }
 
+func (db *Db) BootstrapDelegationExists(stakerID, assetID, operatorAddr string) (bool, error) {
+	stmt := `
+SELECT EXISTS(
+    SELECT 1
+    FROM bootstrap_delegation_states
+    WHERE staker_id = $1 AND asset_id = $2 AND operator_addr = $3
+);`
+
+	var exists bool
+	err := db.SQL.QueryRow(stmt, stakerID, assetID, operatorAddr).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("failed to check bootstrap delegation state existence: %w", err)
+	}
+	return exists, nil
+}
+
 func (db *Db) SaveBootstrapOperatorAsset(o *types.BootstrapOperatorAsset) error {
 	stmt := `
 INSERT INTO bootstrap_operator_assets (
@@ -281,7 +370,6 @@ SET total_amount = EXCLUDED.total_amount,
 }
 
 // Incremental scanning state management functions
-
 // GetScanState retrieves the scanning state for a specific chain type
 func (db *Db) GetScanState(chainType string) (*types.ScanState, error) {
 	stmt := `SELECT chain_type, last_height, last_hash, safe_height, updated_at, created_at
@@ -547,4 +635,57 @@ func (db *Db) GetLastProcessedTransaction(chainType string) (string, error) {
 	}
 
 	return txHash, nil
+}
+
+func (db *Db) OperatorAssetExists(operatorAddr string, assetID string) (bool, error) {
+	stmt := `
+SELECT EXISTS (
+    SELECT 1
+    FROM bootstrap_operator_assets
+    WHERE operator_addr = $1 AND asset_id = $2
+);`
+
+	var exists bool
+	err := db.SQL.QueryRow(stmt, operatorAddr, assetID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("failed to check bootstrap operator asset existence: %w", err)
+	}
+	return exists, nil
+}
+
+func (db *Db) SaveBootstrapTokenPrice(assetID string, price string) error {
+	stmt := `
+INSERT INTO bootstrap_token_prices (asset_id, price, updated_at)
+VALUES ($1, $2, now())
+ON CONFLICT (asset_id) DO UPDATE
+SET price      = EXCLUDED.price,
+    updated_at = EXCLUDED.updated_at;
+`
+
+	_, err := db.SQL.Exec(stmt,
+		assetID,
+		price,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save bootstrap token price: %w", err)
+	}
+	return nil
+}
+
+func (db *Db) SaveBootstrapStatistics(tvl string) error {
+	stmt := `
+INSERT INTO bootstrap_statistics (one_row_id, tvl, updated_at)
+VALUES (TRUE, $1, now())
+ON CONFLICT (one_row_id) DO UPDATE
+SET tvl        = EXCLUDED.tvl,
+    updated_at = EXCLUDED.updated_at;
+`
+
+	_, err := db.SQL.Exec(stmt,
+		tvl,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save bootstrap statistics: %w", err)
+	}
+	return nil
 }

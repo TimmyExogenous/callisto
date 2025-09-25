@@ -39,7 +39,8 @@ bootstrap:
   btc_rpc: 'http://35.175.192.126:8084/testnet'
   xrp_rpc: 'https://s.altnet.rippletest.net:51233/'
   bootstrap_addr: '0x53f39D2ECd900Fb018180dB692A9fc29c8efD38E'
-  update_interval: 5
+  btc_update_interval: 6
+  xrp_update_interval: 1
   eth_lz_chain_id: 40217
   # BTC configuration
   btc_vault_addr: 'tb1q3w7ar6cxdc7j3g8dunqdve589l0t4383pp8efk'
