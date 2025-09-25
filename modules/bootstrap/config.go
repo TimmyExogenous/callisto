@@ -39,15 +39,14 @@ type Config struct {
 	// Maximum iterations for transaction fetching to prevent infinite loops
 	MaxFetchIterations int `yaml:"max_fetch_iterations"`
 	// Incremental scanning configuration
-	BTCStartHeight int64 `yaml:"btc_start_height"` // BTC scanning start height
-	XRPStartLedger int64 `yaml:"xrp_start_ledger"` // XRP scanning start ledger
-	ScanBatchSize  int   `yaml:"scan_batch_size"`  // Batch size for scanning
-	ReorgDepth     int   `yaml:"reorg_depth"`      // Reorganization detection depth
+	BTCStartHeight      int64                                `yaml:"btc_start_height"` // BTC scanning start height
+	XRPStartLedger      int64                                `yaml:"xrp_start_ledger"` // XRP scanning start ledger
+	ScanBatchSize       int                                  `yaml:"scan_batch_size"`  // Batch size for scanning
+	ReorgDepth          int                                  `yaml:"reorg_depth"`      // Reorganization detection depth
 	ETHUpdateInterval   int                                  `yaml:"eth_update_interval"`
 	BTCUpdateInterval   int                                  `yaml:"btc_update_interval"`
 	XRPUpdateInterval   int                                  `yaml:"xrp_update_interval"`
 	PriceUpdateInterval int                                  `yaml:"price_update_interval"`
-	ETHLZChainID        uint64                               `yaml:"eth_lz_chain_id"`
 	ClientChainInfos    []callistotypes.BootstrapClientChain `yaml:"client_chain_infos"`
 	StakingTokenInfos   []callistotypes.BootstrapToken       `yaml:"staking_token_infos"`
 	TokenOracleFeeds    []callistotypes.OracleFeed           `yaml:"token_oracle_feeds"`
@@ -56,7 +55,7 @@ type Config struct {
 // NewConfig allows to build a new Config instance
 func NewConfig(ethHTTP, ethWebsocket, btcRPC, xrpRPC string) *Config {
 	return &Config{
-		ETHHttp:             ethHttp,
+		ETHHttp:             ethHTTP,
 		ETHWebsocket:        ethWebsocket,
 		BTCRPC:              btcRPC,
 		XRPRPC:              xrpRPC,

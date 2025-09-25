@@ -13,10 +13,9 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	callistodb "github.com/forbole/callisto/v4/database"
 	"github.com/forbole/callisto/v4/modules/bootstrap/bootstrap_binding"
-	"github.com/forbole/callisto/v4/modules/bootstrap/storage_binding"
 	"github.com/forbole/callisto/v4/types"
-	"github.com/forbole/juno/v5/types/config"
 	"github.com/forbole/juno/v5/modules"
+	"github.com/forbole/juno/v5/types/config"
 )
 
 var (
@@ -36,7 +35,6 @@ type Module struct {
 	ctx               context.Context
 	bootstrapSession  *bootstrap_binding.BootstrapCallerSession
 	bootstrapFilterer *bootstrap_binding.BootstrapFilterer
-	storageFilterer   *storage_binding.BootstrapStorageFilterer
 	// Address mappings for 1-1 binding validation
 	btcAddressMappings map[string]string // bitcoin -> imuachain
 	xrpAddressMappings map[string]string // xrp -> imuachain
@@ -98,16 +96,14 @@ func NewModule(
 
 	module := &Module{
 		database:           database,
-		EthHttpClient:      ethHttpClient,
+		EthHTTPClient:      ethHTTPClient,
 		EthWSClient:        ethWSClient,
 		XrpClient:          xrpClient,
 		Config:             *bootstrapCfg,
 		BootstrapAddr:      bootstrapAddr,
 		ctx:                ctx,
 		bootstrapSession:   bootstrapSession,
-		storageSession:     storageSession,
 		bootstrapFilterer:  bootstrapFilterer,
-		storageFilterer:    storageFilterer,
 		btcAddressMappings: make(map[string]string),
 		xrpAddressMappings: make(map[string]string),
 	}
@@ -160,16 +156,14 @@ func (m *Module) initializeBootstrapTokens() error {
 	// Define bootstrap client chains for BTC and XRP
 	clientChains := []types.BootstrapClientChain{
 		{
-			Name:             "Bitcoin",
-			MetaInfo:         `{"native_currency":"BTC","decimals":8}`,
-			LayerZeroChainID: 1, // BTC LayerZero chain ID
-			UpdatedAt:        time.Now(),
+			Name:      "Bitcoin",
+			MetaInfo:  `{"native_currency":"BTC","decimals":8}`,
+			LZChainID: 1, // BTC LayerZero chain ID
 		},
 		{
-			Name:             "XRP",
-			MetaInfo:         `{"native_currency":"XRP","decimals":6}`,
-			LayerZeroChainID: 2, // XRP LayerZero chain ID
-			UpdatedAt:        time.Now(),
+			Name:      "XRP",
+			MetaInfo:  `{"native_currency":"XRP","decimals":6}`,
+			LZChainID: 2, // XRP LayerZero chain ID
 		},
 	}
 
@@ -181,35 +175,39 @@ func (m *Module) initializeBootstrapTokens() error {
 		}
 	}
 
-	// Define bootstrap tokens for BTC and XRP
-	tokens := []types.BootstrapToken{
+	// Define bootstrap token states for BTC and XRP
+	tokenStates := []types.BootstrapTokenState{
 		{
-			AssetID:            VirtualAddress + "_0x1", // BTC
-			Name:               "Bitcoin",
-			Symbol:             "BTC",
-			Address:            "0x0000000000000000000000000000000000000000", // Placeholder address for BTC
-			Decimals:           8,                                            // BTC has 8 decimal places (satoshis)
-			LayerZeroChainID:   1,                                            // BTC chain ID = 1
+			BootstrapToken: types.BootstrapToken{
+				AssetID:   VirtualAddress + "_0x1", // BTC
+				Name:      "Bitcoin",
+				Symbol:    "BTC",
+				Address:   "0x0000000000000000000000000000000000000000", // Placeholder address for BTC
+				Decimals:  8,                                            // BTC has 8 decimal places (satoshis)
+				LZChainID: 1,                                            // BTC chain ID = 1
+			},
 			StakingTotalAmount: "0",
 			UpdatedAt:          time.Now(),
 		},
 		{
-			AssetID:            VirtualAddress + "_0x2", // XRP
-			Name:               "XRP",
-			Symbol:             "XRP",
-			Address:            "0x0000000000000000000000000000000000000000", // Placeholder address for XRP
-			Decimals:           6,                                            // XRP has 6 decimal places (drops)
-			LayerZeroChainID:   2,                                            // XRP chain ID = 2
+			BootstrapToken: types.BootstrapToken{
+				AssetID:   VirtualAddress + "_0x2", // XRP
+				Name:      "XRP",
+				Symbol:    "XRP",
+				Address:   "0x0000000000000000000000000000000000000000", // Placeholder address for XRP
+				Decimals:  6,                                            // XRP has 6 decimal places (drops)
+				LZChainID: 2,                                            // XRP chain ID = 2
+			},
 			StakingTotalAmount: "0",
 			UpdatedAt:          time.Now(),
 		},
 	}
 
-	// Save each token if it doesn't exist
-	for _, token := range tokens {
-		err := m.database.SaveBootstrapToken(&token)
+	// Save each token state if it doesn't exist
+	for _, tokenState := range tokenStates {
+		err := m.database.SaveBootstrapToken(&tokenState)
 		if err != nil {
-			return fmt.Errorf("failed to save bootstrap token %s: %w", token.Symbol, err)
+			return fmt.Errorf("failed to save bootstrap token %s: %w", tokenState.Symbol, err)
 		}
 	}
 
