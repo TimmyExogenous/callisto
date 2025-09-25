@@ -3,9 +3,9 @@ package bootstrap
 import (
 	"context"
 	"fmt"
-	"github.com/xrpscan/xrpl-go"
-	"sync"
 	"time"
+
+	"github.com/xrpscan/xrpl-go"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -39,11 +39,9 @@ type Module struct {
 	storageSession    *storage_binding.BootstrapStorageCallerSession
 	bootstrapFilterer *bootstrap_binding.BootstrapFilterer
 	storageFilterer   *storage_binding.BootstrapStorageFilterer
-	// Address mappings for 1-1 binding validation (separate mutexes for true parallelism)
+	// Address mappings for 1-1 binding validation
 	btcAddressMappings map[string]string // bitcoin -> imuachain
 	xrpAddressMappings map[string]string // xrp -> imuachain
-	btcMappingMutex    sync.RWMutex      // Separate mutex for BTC mappings
-	xrpMappingMutex    sync.RWMutex      // Separate mutex for XRP mappings
 }
 
 // NewModule builds a new Module instance
@@ -155,11 +153,9 @@ func (m *Module) loadExistingBindings() error {
 		return fmt.Errorf("failed to load BTC address bindings: %w", err)
 	}
 
-	m.btcMappingMutex.Lock()
 	for _, binding := range btcBindings {
 		m.btcAddressMappings[binding.SourceAddr] = binding.TargetAddr
 	}
-	m.btcMappingMutex.Unlock()
 
 	// Load XRP bindings
 	xrpBindings, err := m.database.GetAddressBindings("XRP")
@@ -167,11 +163,9 @@ func (m *Module) loadExistingBindings() error {
 		return fmt.Errorf("failed to load XRP address bindings: %w", err)
 	}
 
-	m.xrpMappingMutex.Lock()
 	for _, binding := range xrpBindings {
 		m.xrpAddressMappings[binding.SourceAddr] = binding.TargetAddr
 	}
-	m.xrpMappingMutex.Unlock()
 
 	return nil
 }

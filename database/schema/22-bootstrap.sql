@@ -1,4 +1,4 @@
-CREATE TABLE bootstrap_validator
+CREATE TABLE IF NOT EXISTS bootstrap_validator
 (
     validator_eth_addr  TEXT    NOT NULL PRIMARY KEY,
     validator_im_addr   TEXT    NOT NULL UNIQUE,
@@ -7,20 +7,20 @@ CREATE TABLE bootstrap_validator
     commission_rate     NUMERIC NOT NULL,
     max_commission_rate NUMERIC NOT NULL,
     max_change_rate     NUMERIC NOT NULL,
-    updated_at          TIMESTAMP WITHOUT TIME ZONE,
+    updated_at          TIMESTAMP WITHOUT TIME ZONE
 );
 
-CREATE INDEX idx_validator_im_addr ON bootstrap_validator (validator_im_addr);
+CREATE INDEX IF NOT EXISTS idx_validator_im_addr ON bootstrap_validator (validator_im_addr);
 
-CREATE TABLE bootstrap_client_chains
+CREATE TABLE IF NOT EXISTS bootstrap_client_chains
 (
     name                TEXT NOT NULL,
     meta_info           TEXT NOT NULL,
     layer_zero_chain_id BIGINT PRIMARY KEY,
-    updated_at          TIMESTAMP WITHOUT TIME ZONE,
+    updated_at          TIMESTAMP WITHOUT TIME ZONE
 );
 
-CREATE TABLE bootstrap_tokens
+CREATE TABLE IF NOT EXISTS bootstrap_tokens
 (
     -- generated for ease; not required to be part of the schema
     asset_id             TEXT PRIMARY KEY,
@@ -35,7 +35,7 @@ CREATE TABLE bootstrap_tokens
     CONSTRAINT fk_layer_zero_chain_id FOREIGN KEY (layer_zero_chain_id) REFERENCES bootstrap_client_chains (layer_zero_chain_id)
 );
 
-CREATE TABLE bootstrap_staker_assets
+CREATE TABLE IF NOT EXISTS bootstrap_staker_assets
 (
     staker_id    TEXT    NOT NULL,
     asset_id     TEXT    NOT NULL,
@@ -48,10 +48,10 @@ CREATE TABLE bootstrap_staker_assets
     CONSTRAINT fk_asset_id FOREIGN KEY (asset_id) REFERENCES bootstrap_tokens (asset_id)
 );
 
-CREATE INDEX idx_deposits_staker_id ON bootstrap_staker_assets (staker_id);
-CREATE INDEX idx_deposits_asset_id ON bootstrap_staker_assets (asset_id);
+CREATE INDEX IF NOT EXISTS idx_bootstrap_deposits_staker_id ON bootstrap_staker_assets (staker_id);
+CREATE INDEX IF NOT EXISTS idx_bootstrap_deposits_asset_id ON bootstrap_staker_assets (asset_id);
 
-CREATE TABLE bootstrap_delegation_states
+CREATE TABLE IF NOT EXISTS bootstrap_delegation_states
 (
     staker_id     TEXT    NOT NULL,
     asset_id      TEXT    NOT NULL,
@@ -61,13 +61,13 @@ CREATE TABLE bootstrap_delegation_states
     PRIMARY KEY (staker_id, asset_id, operator_addr),
     CONSTRAINT fk_operator FOREIGN KEY (operator_addr) REFERENCES bootstrap_validator (validator_im_addr),
     CONSTRAINT fk_asset_id FOREIGN KEY (asset_id) REFERENCES bootstrap_tokens (asset_id),
-    CONSTRAINT fk_staker_id FOREIGN KEY (staker_id) REFERENCES bootstrap_staker_assets (staker_id)
+    CONSTRAINT fk_staker_asset FOREIGN KEY (staker_id, asset_id) REFERENCES bootstrap_staker_assets (staker_id, asset_id)
 );
 
-CREATE INDEX idx_delegations_staker_id ON bootstrap_delegation_states (staker_id);
-CREATE INDEX idx_delegations_asset_id ON bootstrap_delegation_states (asset_id);
+CREATE INDEX IF NOT EXISTS idx_bootstrap_delegations_staker_id ON bootstrap_delegation_states (staker_id);
+CREATE INDEX IF NOT EXISTS idx_bootstrap_delegations_asset_id ON bootstrap_delegation_states (asset_id);
 
-CREATE TABLE bootstrap_operator_assets
+CREATE TABLE IF NOT EXISTS bootstrap_operator_assets
 (
     operator_addr TEXT    NOT NULL,
     asset_id      TEXT    NOT NULL,
@@ -80,11 +80,11 @@ CREATE TABLE bootstrap_operator_assets
     CONSTRAINT fk_operator FOREIGN KEY (operator_addr) REFERENCES bootstrap_validator (validator_im_addr),
     CONSTRAINT chk_total_amount CHECK (total_amount = self_amount + other_amount)
 );
-CREATE INDEX idx_operator_assets_operator ON bootstrap_operator_assets (operator_addr);
-CREATE INDEX idx_operator_assets_asset_id ON bootstrap_operator_assets (asset_id);
+CREATE INDEX IF NOT EXISTS idx_bootstrap_operator_assets_operator ON bootstrap_operator_assets (operator_addr);
+CREATE INDEX IF NOT EXISTS idx_bootstrap_operator_assets_asset_id ON bootstrap_operator_assets (asset_id);
 
 -- Incremental scanning support tables
-CREATE TABLE bootstrap_scan_state
+CREATE TABLE IF NOT EXISTS bootstrap_scan_state
 (
     chain_type     TEXT PRIMARY KEY, -- 'BTC' or 'XRP'
     last_height    BIGINT NOT NULL,  -- BTC: block height, XRP: ledger index
@@ -94,7 +94,7 @@ CREATE TABLE bootstrap_scan_state
     created_at     TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE bootstrap_processed_transactions
+CREATE TABLE IF NOT EXISTS bootstrap_processed_transactions
 (
     chain_type      TEXT NOT NULL,   -- 'BTC' or 'XRP'
     tx_hash         TEXT NOT NULL,   -- Transaction hash
@@ -103,11 +103,11 @@ CREATE TABLE bootstrap_processed_transactions
     PRIMARY KEY (chain_type, tx_hash)
 );
 
-CREATE INDEX idx_processed_tx_height ON bootstrap_processed_transactions (chain_type, block_height);
-CREATE INDEX idx_processed_tx_processed_at ON bootstrap_processed_transactions (processed_at);
+CREATE INDEX IF NOT EXISTS idx_processed_tx_height ON bootstrap_processed_transactions (chain_type, block_height);
+CREATE INDEX IF NOT EXISTS idx_processed_tx_processed_at ON bootstrap_processed_transactions (processed_at);
 
 -- Address binding tables for 1:1 mapping between external chains and Imuachain addresses
-CREATE TABLE bootstrap_address_bindings
+CREATE TABLE IF NOT EXISTS bootstrap_address_bindings
 (
     chain_type    TEXT NOT NULL, -- 'BTC' or 'XRP'
     source_addr   TEXT NOT NULL, -- BTC/XRP address (normalized: lowercase, trimmed)
@@ -119,5 +119,5 @@ CREATE TABLE bootstrap_address_bindings
     CONSTRAINT uq_target_per_chain UNIQUE (chain_type, target_addr)
 );
 
-CREATE INDEX idx_address_bindings_target ON bootstrap_address_bindings (target_addr);
-CREATE INDEX idx_address_bindings_created ON bootstrap_address_bindings (created_at);
+CREATE INDEX IF NOT EXISTS idx_address_bindings_target ON bootstrap_address_bindings (target_addr);
+CREATE INDEX IF NOT EXISTS idx_address_bindings_created ON bootstrap_address_bindings (created_at);

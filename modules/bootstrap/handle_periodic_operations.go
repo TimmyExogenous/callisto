@@ -87,166 +87,206 @@ func safeStringExtract(data map[string]interface{}, key string) (string, error) 
 	return str, nil
 }
 
-// validateBTCAddressBinding validates and stores BTC address binding with database persistence
-func (m *Module) validateBTCAddressBinding(senderAddr, imuachainAddr, txid string) bool {
-	if senderAddr == "" || imuachainAddr == "" {
-		log.Warn().Str("txid", txid).Msg("empty address in binding validation")
-		return false
+// validateBTCAddressBinding validates and resolves BTC address binding with 1-1 mapping rules
+// Returns the imuachain address to use (may be different from input if conflict resolved)
+// Returns empty string if binding is invalid and transaction should be rejected
+func (m *Module) validateBTCAddressBinding(senderAddr, parsedImuachainAddr, txid string) (string, error) {
+	if senderAddr == "" || parsedImuachainAddr == "" {
+		return "", fmt.Errorf("empty address in binding validation")
 	}
 
 	// Normalize addresses for consistent comparison
 	senderAddr = strings.ToLower(strings.TrimSpace(senderAddr))
-	imuachainAddr = strings.ToLower(strings.TrimSpace(imuachainAddr))
+	parsedImuachainAddr = strings.ToLower(strings.TrimSpace(parsedImuachainAddr))
 
-	m.btcMappingMutex.Lock()
-	defer m.btcMappingMutex.Unlock()
-
-	// Check existing binding in memory first
-	if existing, exists := m.btcAddressMappings[senderAddr]; exists {
-		if existing != imuachainAddr {
+	// First, check if sender is already bound to an imuachain address in memory
+	if existingImuachainAddr, exists := m.btcAddressMappings[senderAddr]; exists {
+		if existingImuachainAddr != parsedImuachainAddr {
 			log.Warn().Str("txid", txid).
 				Str("bitcoin_addr", senderAddr).
-				Str("existing_binding", existing).
-				Str("new_binding", imuachainAddr).
-				Msg("rejecting BTC transaction: address already bound to different imuachain address")
-			return false
+				Str("existing_binding", existingImuachainAddr).
+				Str("parsed_binding", parsedImuachainAddr).
+				Msg("BTC sender already bound to different imuachain address, using existing binding")
+			return existingImuachainAddr, nil
 		}
-		// Address already bound correctly, allow
-		return true
+		// Address already bound correctly
+		return existingImuachainAddr, nil
 	}
 
-	// Check reverse binding in memory
-	for btcAddr, imuaAddr := range m.btcAddressMappings {
-		if imuaAddr == imuachainAddr && btcAddr != senderAddr {
+	// Check if parsed imuachain address is already bound to another sender in memory
+	for existingSender, existingImuachain := range m.btcAddressMappings {
+		if existingImuachain == parsedImuachainAddr && existingSender != senderAddr {
 			log.Warn().Str("txid", txid).
-				Str("imuachain_addr", imuachainAddr).
-				Str("existing_btc_binding", btcAddr).
-				Str("new_btc_addr", senderAddr).
-				Msg("rejecting BTC transaction: imuachain address already bound to different bitcoin address")
-			return false
+				Str("parsed_imuachain_addr", parsedImuachainAddr).
+				Str("existing_sender", existingSender).
+				Str("new_sender", senderAddr).
+				Msg("BTC imuachain address already bound to different sender, using existing binding")
+			return existingImuachain, nil
 		}
 	}
 
 	// Double-check with database for consistency (in case memory was cleared)
-	existingBinding, err := m.database.CheckTargetAddressBinding("BTC", imuachainAddr, senderAddr)
+	// Check if sender is already bound in database
+	existingSenderBinding, err := m.database.GetAddressBinding("BTC", senderAddr)
 	if err != nil {
-		log.Err(err).Str("txid", txid).Msg("error checking target address binding in database")
-		return false
+		return "", fmt.Errorf("error checking sender address binding in database: %w", err)
 	}
-	if existingBinding != nil {
-		log.Warn().Str("txid", txid).
-			Str("imuachain_addr", imuachainAddr).
-			Str("existing_btc_binding", existingBinding.SourceAddr).
-			Str("new_btc_addr", senderAddr).
-			Msg("rejecting BTC transaction: imuachain address already bound to different bitcoin address in database")
-		return false
+	if existingSenderBinding != nil {
+		if existingSenderBinding.TargetAddr != parsedImuachainAddr {
+			log.Warn().Str("txid", txid).
+				Str("bitcoin_addr", senderAddr).
+				Str("existing_binding", existingSenderBinding.TargetAddr).
+				Str("parsed_binding", parsedImuachainAddr).
+				Time("existing_created_at", existingSenderBinding.CreatedAt).
+				Msg("BTC sender already bound to different imuachain address in database, using existing binding")
+			// Update memory with the correct binding
+			m.btcAddressMappings[senderAddr] = existingSenderBinding.TargetAddr
+			return existingSenderBinding.TargetAddr, nil
+		}
+		// Already bound correctly, update memory
+		m.btcAddressMappings[senderAddr] = existingSenderBinding.TargetAddr
+		return existingSenderBinding.TargetAddr, nil
 	}
 
-	// Establish new binding in both memory and database
-	m.btcAddressMappings[senderAddr] = imuachainAddr
+	// Check if parsed imuachain address is already bound to another sender in database
+	existingTargetBinding, err := m.database.CheckTargetAddressBinding("BTC", parsedImuachainAddr, senderAddr)
+	if err != nil {
+		return "", fmt.Errorf("error checking target address binding in database: %w", err)
+	}
+	if existingTargetBinding != nil {
+		log.Warn().Str("txid", txid).
+			Str("parsed_imuachain_addr", parsedImuachainAddr).
+			Str("existing_sender", existingTargetBinding.SourceAddr).
+			Str("new_sender", senderAddr).
+			Time("existing_created_at", existingTargetBinding.CreatedAt).
+			Msg("BTC imuachain address already bound to different sender in database, using existing binding")
+		return existingTargetBinding.TargetAddr, nil
+	}
+
+	// No conflicts found, establish new binding
+	m.btcAddressMappings[senderAddr] = parsedImuachainAddr
 
 	// Save to database
 	binding := &types.AddressBinding{
 		ChainType:  "BTC",
 		SourceAddr: senderAddr,
-		TargetAddr: imuachainAddr,
+		TargetAddr: parsedImuachainAddr,
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),
 	}
 
 	if err := m.database.SaveAddressBinding(binding); err != nil {
-		log.Err(err).Str("txid", txid).Msg("failed to save BTC address binding to database")
 		// Remove from memory if database save failed
 		delete(m.btcAddressMappings, senderAddr)
-		return false
+		return "", fmt.Errorf("failed to save address binding: %w", err)
 	}
 
 	log.Info().Str("txid", txid).
 		Str("bitcoin_addr", senderAddr).
-		Str("imuachain_addr", imuachainAddr).
+		Str("imuachain_addr", parsedImuachainAddr).
 		Msg("established new BTC address binding")
-	return true
+	return parsedImuachainAddr, nil
 }
 
-// validateXRPAddressBinding validates and stores XRP address binding with database persistence
-func (m *Module) validateXRPAddressBinding(senderAddr, imuachainAddr, txHash string) bool {
-	if senderAddr == "" || imuachainAddr == "" {
-		log.Warn().Str("hash", txHash).Msg("empty address in binding validation")
-		return false
+// validateXRPAddressBinding validates and resolves XRP address binding with 1-1 mapping rules
+// Returns the imuachain address to use (may be different from input if conflict resolved)
+// Returns empty string if binding is invalid and transaction should be rejected
+func (m *Module) validateXRPAddressBinding(senderAddr, parsedImuachainAddr, txHash string) (string, error) {
+	if senderAddr == "" || parsedImuachainAddr == "" {
+		return "", fmt.Errorf("empty address in binding validation")
 	}
 
 	// Normalize addresses for consistent comparison
 	senderAddr = strings.ToLower(strings.TrimSpace(senderAddr))
-	imuachainAddr = strings.ToLower(strings.TrimSpace(imuachainAddr))
+	parsedImuachainAddr = strings.ToLower(strings.TrimSpace(parsedImuachainAddr))
 
-	m.xrpMappingMutex.Lock()
-	defer m.xrpMappingMutex.Unlock()
-
-	// Check existing binding in memory first
-	if existing, exists := m.xrpAddressMappings[senderAddr]; exists {
-		if existing != imuachainAddr {
+	// First, check if sender is already bound to an imuachain address in memory
+	if existingImuachainAddr, exists := m.xrpAddressMappings[senderAddr]; exists {
+		if existingImuachainAddr != parsedImuachainAddr {
 			log.Warn().Str("hash", txHash).
 				Str("xrp_addr", senderAddr).
-				Str("existing_binding", existing).
-				Str("new_binding", imuachainAddr).
-				Msg("rejecting XRP transaction: address already bound to different imuachain address")
-			return false
+				Str("existing_binding", existingImuachainAddr).
+				Str("parsed_binding", parsedImuachainAddr).
+				Msg("XRP sender already bound to different imuachain address, using existing binding")
+			return existingImuachainAddr, nil
 		}
-		// Address already bound correctly, allow
-		return true
+		// Address already bound correctly
+		return existingImuachainAddr, nil
 	}
 
-	// Check reverse binding in memory
-	for xrpAddr, imuaAddr := range m.xrpAddressMappings {
-		if imuaAddr == imuachainAddr && xrpAddr != senderAddr {
+	// Check if parsed imuachain address is already bound to another sender in memory
+	for existingSender, existingImuachain := range m.xrpAddressMappings {
+		if existingImuachain == parsedImuachainAddr && existingSender != senderAddr {
 			log.Warn().Str("hash", txHash).
-				Str("imuachain_addr", imuachainAddr).
-				Str("existing_xrp_binding", xrpAddr).
-				Str("new_xrp_addr", senderAddr).
-				Msg("rejecting XRP transaction: imuachain address already bound to different XRP address")
-			return false
+				Str("parsed_imuachain_addr", parsedImuachainAddr).
+				Str("existing_sender", existingSender).
+				Str("new_sender", senderAddr).
+				Msg("XRP imuachain address already bound to different sender, using existing binding")
+			return existingImuachain, nil
 		}
 	}
 
 	// Double-check with database for consistency (in case memory was cleared)
-	existingBinding, err := m.database.CheckTargetAddressBinding("XRP", imuachainAddr, senderAddr)
+	// Check if sender is already bound in database
+	existingSenderBinding, err := m.database.GetAddressBinding("XRP", senderAddr)
 	if err != nil {
-		log.Err(err).Str("hash", txHash).Msg("error checking target address binding in database")
-		return false
+		return "", fmt.Errorf("error checking sender address binding in database: %w", err)
 	}
-	if existingBinding != nil {
-		log.Warn().Str("hash", txHash).
-			Str("imuachain_addr", imuachainAddr).
-			Str("existing_xrp_binding", existingBinding.SourceAddr).
-			Str("new_xrp_addr", senderAddr).
-			Msg("rejecting XRP transaction: imuachain address already bound to different XRP address in database")
-		return false
+	if existingSenderBinding != nil {
+		if existingSenderBinding.TargetAddr != parsedImuachainAddr {
+			log.Warn().Str("hash", txHash).
+				Str("xrp_addr", senderAddr).
+				Str("existing_binding", existingSenderBinding.TargetAddr).
+				Str("parsed_binding", parsedImuachainAddr).
+				Time("existing_created_at", existingSenderBinding.CreatedAt).
+				Msg("XRP sender already bound to different imuachain address in database, using existing binding")
+			// Update memory with the correct binding
+			m.xrpAddressMappings[senderAddr] = existingSenderBinding.TargetAddr
+			return existingSenderBinding.TargetAddr, nil
+		}
+		// Already bound correctly, update memory
+		m.xrpAddressMappings[senderAddr] = existingSenderBinding.TargetAddr
+		return existingSenderBinding.TargetAddr, nil
 	}
 
-	// Establish new binding in both memory and database
-	m.xrpAddressMappings[senderAddr] = imuachainAddr
+	// Check if parsed imuachain address is already bound to another sender in database
+	existingTargetBinding, err := m.database.CheckTargetAddressBinding("XRP", parsedImuachainAddr, senderAddr)
+	if err != nil {
+		return "", fmt.Errorf("error checking target address binding in database: %w", err)
+	}
+	if existingTargetBinding != nil {
+		log.Warn().Str("hash", txHash).
+			Str("parsed_imuachain_addr", parsedImuachainAddr).
+			Str("existing_sender", existingTargetBinding.SourceAddr).
+			Str("new_sender", senderAddr).
+			Time("existing_created_at", existingTargetBinding.CreatedAt).
+			Msg("XRP imuachain address already bound to different sender in database, using existing binding")
+		return existingTargetBinding.TargetAddr, nil
+	}
+
+	// No conflicts found, establish new binding
+	m.xrpAddressMappings[senderAddr] = parsedImuachainAddr
 
 	// Save to database
 	binding := &types.AddressBinding{
 		ChainType:  "XRP",
 		SourceAddr: senderAddr,
-		TargetAddr: imuachainAddr,
+		TargetAddr: parsedImuachainAddr,
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),
 	}
 
 	if err := m.database.SaveAddressBinding(binding); err != nil {
-		log.Err(err).Str("hash", txHash).Msg("failed to save XRP address binding to database")
 		// Remove from memory if database save failed
 		delete(m.xrpAddressMappings, senderAddr)
-		return false
+		return "", fmt.Errorf("failed to save address binding: %w", err)
 	}
 
 	log.Info().Str("hash", txHash).
 		Str("xrp_addr", senderAddr).
-		Str("imuachain_addr", imuachainAddr).
+		Str("imuachain_addr", parsedImuachainAddr).
 		Msg("established new XRP address binding")
-	return true
+	return parsedImuachainAddr, nil
 }
 
 // processTransactionWithRetry executes a transaction function with retry logic for database errors
@@ -502,9 +542,27 @@ func (m *Module) isValidDepositTransaction(tx types.BTCTx) (*BTCOPReturnData, er
 		return nil, fmt.Errorf("BTC transaction %s validator %s is not registered for bootstrap", tx.TxID, opReturnData.ValidatorAddress)
 	}
 
-	// Convert to BTCOPReturnData format
+	// Find the sender address from transaction inputs
+	senderAddr := ""
+	for _, vin := range tx.Vin {
+		if vin.Prevout.ScriptPubKeyAddr != "" {
+			senderAddr = vin.Prevout.ScriptPubKeyAddr
+			break
+		}
+	}
+	if senderAddr == "" {
+		return nil, fmt.Errorf("BTC transaction %s has no sender address found", tx.TxID)
+	}
+
+	// Validate address binding and get the correct imuachain address to use
+	correctImuachainAddr, err := m.validateBTCAddressBinding(senderAddr, opReturnData.ImuachainAddressHex, tx.TxID)
+	if err != nil {
+		return nil, fmt.Errorf("BTC transaction %s address binding validation failed: %w", tx.TxID, err)
+	}
+
+	// Convert to BTCOPReturnData format with the correct imuachain address
 	result := &BTCOPReturnData{
-		ImuachainAddress: opReturnData.ImuachainAddressHex,
+		ImuachainAddress: correctImuachainAddr,
 		ValidatorAddress: opReturnData.ValidatorAddress,
 	}
 
@@ -1364,13 +1422,14 @@ func (m *Module) validateAndParseBootstrapXRPTx(tx *types.XRPTransaction) error 
 		return fmt.Errorf("validator %s is not registered for bootstrap", memoData.ValidatorAddress)
 	}
 
-	// Validate 1-1 address binding for XRP
-	if !m.validateXRPAddressBinding(tx.Tx.Account, memoData.ImuachainAddress, tx.Hash) {
-		return fmt.Errorf("XRP address binding validation failed for account %s and imuachain address %s", tx.Tx.Account, memoData.ImuachainAddress)
+	// Validate 1-1 address binding for XRP and get the correct imuachain address to use
+	correctImuachainAddr, err := m.validateXRPAddressBinding(tx.Tx.Account, memoData.ImuachainAddress, tx.Hash)
+	if err != nil {
+		return fmt.Errorf("XRP address binding validation failed: %w", err)
 	}
 
 	// Set parsed addresses in the transaction struct
-	tx.ImuachainAddress = memoData.ImuachainAddress
+	tx.ImuachainAddress = correctImuachainAddr
 	tx.ValidatorAddress = memoData.ValidatorAddress
 
 	return nil
@@ -1601,8 +1660,7 @@ func (m *Module) getXRPVaultTransactionsFromLedger(fromLedger, toLedger int64) (
 }
 
 // refetchBootstrapStates refetches BTC and XRP bootstrap states using parallel processing
-// Note: BTC and XRP processing now uses separate mutexes for true parallelism in address mapping
-// Database operations are handled per-chain and should not significantly compete with each other
+// BTC and XRP processing is parallel but uses separate address mappings, no mutex needed
 func (m *Module) refetchBootstrapStates() error {
 	log.Debug().Str("module", "bootstrap").Msg("starting parallel bootstrap states refetch")
 
