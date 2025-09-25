@@ -1,6 +1,7 @@
 package database
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -366,6 +367,274 @@ SET total_amount = EXCLUDED.total_amount,
 		return fmt.Errorf("failed to save bootstrap operator asset: %w", err)
 	}
 	return nil
+}
+
+// Incremental scanning state management functions
+// GetScanState retrieves the scanning state for a specific chain type
+func (db *Db) GetScanState(chainType string) (*types.ScanState, error) {
+	stmt := `SELECT chain_type, last_height, last_hash, safe_height, updated_at, created_at
+             FROM bootstrap_scan_state WHERE chain_type = $1`
+
+	var state types.ScanState
+	err := db.SQL.QueryRow(stmt, chainType).Scan(
+		&state.ChainType,
+		&state.LastHeight,
+		&state.LastHash,
+		&state.SafeHeight,
+		&state.UpdatedAt,
+		&state.CreatedAt,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get scan state for %s: %w", chainType, err)
+	}
+
+	return &state, nil
+}
+
+// UpdateScanState updates or inserts the scanning state for a specific chain type
+func (db *Db) UpdateScanState(state *types.ScanState) error {
+	stmt := `
+INSERT INTO bootstrap_scan_state (chain_type, last_height, last_hash, safe_height, updated_at)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (chain_type) DO UPDATE
+SET last_height = EXCLUDED.last_height,
+    last_hash   = EXCLUDED.last_hash,
+    safe_height = EXCLUDED.safe_height,
+    updated_at  = EXCLUDED.updated_at`
+
+	_, err := db.SQL.Exec(stmt,
+		state.ChainType,
+		state.LastHeight,
+		state.LastHash,
+		state.SafeHeight,
+		state.UpdatedAt,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to update scan state for %s: %w", state.ChainType, err)
+	}
+
+	return nil
+}
+
+// IsTransactionProcessed checks if a transaction has already been processed
+func (db *Db) IsTransactionProcessed(chainType, txHash string) (bool, error) {
+	stmt := `SELECT EXISTS(SELECT 1 FROM bootstrap_processed_transactions
+                          WHERE chain_type = $1 AND tx_hash = $2)`
+
+	var exists bool
+	err := db.SQL.QueryRow(stmt, chainType, txHash).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("failed to check if transaction is processed: %w", err)
+	}
+
+	return exists, nil
+}
+
+// MarkTransactionProcessed marks a transaction as processed
+func (db *Db) MarkTransactionProcessed(chainType, txHash string, blockHeight int64) error {
+	stmt := `INSERT INTO bootstrap_processed_transactions (chain_type, tx_hash, block_height)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (chain_type, tx_hash) DO NOTHING`
+
+	_, err := db.SQL.Exec(stmt, chainType, txHash, blockHeight)
+	if err != nil {
+		return fmt.Errorf("failed to mark transaction as processed: %w", err)
+	}
+
+	return nil
+}
+
+// Address binding management functions
+// GetAddressBindings retrieves all address bindings for a specific chain type
+func (db *Db) GetAddressBindings(chainType string) ([]types.AddressBinding, error) {
+	stmt := `SELECT chain_type, source_addr, target_addr, created_at, updated_at
+             FROM bootstrap_address_bindings WHERE chain_type = $1
+             ORDER BY created_at ASC`
+
+	rows, err := db.SQL.Query(stmt, chainType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get address bindings for %s: %w", chainType, err)
+	}
+	defer rows.Close()
+
+	var bindings []types.AddressBinding
+	for rows.Next() {
+		var binding types.AddressBinding
+		err := rows.Scan(
+			&binding.ChainType,
+			&binding.SourceAddr,
+			&binding.TargetAddr,
+			&binding.CreatedAt,
+			&binding.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan address binding: %w", err)
+		}
+		bindings = append(bindings, binding)
+	}
+
+	return bindings, nil
+}
+
+// SaveAddressBinding saves or updates an address binding
+func (db *Db) SaveAddressBinding(binding *types.AddressBinding) error {
+	stmt := `
+INSERT INTO bootstrap_address_bindings (chain_type, source_addr, target_addr, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (chain_type, source_addr) DO UPDATE
+SET target_addr = EXCLUDED.target_addr,
+    updated_at  = EXCLUDED.updated_at`
+
+	_, err := db.SQL.Exec(
+		stmt,
+		binding.ChainType,
+		binding.SourceAddr,
+		binding.TargetAddr,
+		binding.CreatedAt,
+		binding.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save address binding: %w", err)
+	}
+
+	return nil
+}
+
+// GetAddressBinding retrieves a specific address binding
+func (db *Db) GetAddressBinding(chainType, sourceAddr string) (*types.AddressBinding, error) {
+	stmt := `SELECT chain_type, source_addr, target_addr, created_at, updated_at
+             FROM bootstrap_address_bindings
+             WHERE chain_type = $1 AND source_addr = $2`
+
+	var binding types.AddressBinding
+	err := db.SQL.QueryRow(stmt, chainType, sourceAddr).Scan(
+		&binding.ChainType,
+		&binding.SourceAddr,
+		&binding.TargetAddr,
+		&binding.CreatedAt,
+		&binding.UpdatedAt,
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil // Not found, not an error
+		}
+		return nil, fmt.Errorf("failed to get address binding for %s/%s: %w", chainType, sourceAddr, err)
+	}
+
+	return &binding, nil
+}
+
+// CheckTargetAddressBinding checks if a target address is already bound to a different source address
+func (db *Db) CheckTargetAddressBinding(chainType, targetAddr, excludeSourceAddr string) (*types.AddressBinding, error) {
+	stmt := `SELECT chain_type, source_addr, target_addr, created_at, updated_at
+             FROM bootstrap_address_bindings
+             WHERE chain_type = $1 AND target_addr = $2 AND source_addr != $3`
+
+	var binding types.AddressBinding
+	err := db.SQL.QueryRow(stmt, chainType, targetAddr, excludeSourceAddr).Scan(
+		&binding.ChainType,
+		&binding.SourceAddr,
+		&binding.TargetAddr,
+		&binding.CreatedAt,
+		&binding.UpdatedAt,
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil // Not found, not an error
+		}
+		return nil, fmt.Errorf("failed to check target address binding for %s/%s: %w", chainType, targetAddr, err)
+	}
+
+	return &binding, nil
+}
+
+// DeleteAddressBinding removes an address binding
+func (db *Db) DeleteAddressBinding(chainType, sourceAddr string) error {
+	stmt := `DELETE FROM bootstrap_address_bindings WHERE chain_type = $1 AND source_addr = $2`
+
+	result, err := db.SQL.Exec(stmt, chainType, sourceAddr)
+	if err != nil {
+		return fmt.Errorf("failed to delete address binding: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check deletion result: %w", err)
+	}
+
+	if rows == 0 {
+		return fmt.Errorf("address binding not found for %s/%s", chainType, sourceAddr)
+	}
+
+	return nil
+}
+
+// Transaction support methods
+
+// WithTransaction executes a function within a database transaction
+func (db *Db) WithTransaction(fn func(tx *sql.Tx) error) error {
+	tx, err := db.SQL.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+			panic(r)
+		}
+	}()
+
+	if err := fn(tx); err != nil {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+			return fmt.Errorf("failed to rollback transaction after error %v: %w", err, rollbackErr)
+		}
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+// MarkTransactionProcessedInTx marks a transaction as processed within an existing transaction
+func (db *Db) MarkTransactionProcessedInTx(tx *sql.Tx, chainType, txHash string, blockHeight int64) error {
+	stmt := `
+INSERT INTO bootstrap_processed_transactions (chain_type, tx_hash, block_height, processed_at)
+VALUES ($1, $2, $3, NOW())
+ON CONFLICT (chain_type, tx_hash) DO NOTHING`
+
+	_, err := tx.Exec(stmt, chainType, txHash, blockHeight)
+	if err != nil {
+		return fmt.Errorf("failed to mark transaction as processed: %w", err)
+	}
+
+	return nil
+}
+
+// GetLastProcessedTransaction gets the last processed transaction ID for a specific chain type
+// Used for pagination when fetching transactions from address API
+func (db *Db) GetLastProcessedTransaction(chainType string) (string, error) {
+	stmt := `SELECT tx_hash FROM bootstrap_processed_transactions
+             WHERE chain_type = $1
+             ORDER BY block_height DESC, processed_at DESC
+             LIMIT 1`
+
+	var txHash string
+	err := db.SQL.QueryRow(stmt, chainType).Scan(&txHash)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil // No transactions processed yet, return empty string
+		}
+		return "", fmt.Errorf("failed to get last processed transaction for %s: %w", chainType, err)
+	}
+
+	return txHash, nil
 }
 
 func (db *Db) OperatorAssetExists(operatorAddr string, assetID string) (bool, error) {
