@@ -10,7 +10,7 @@ CREATE TABLE bootstrap_validator
     updated_at          TIMESTAMP WITHOUT TIME ZONE
 );
 
-CREATE INDEX idx_validator_im_addr ON bootstrap_validator (validator_im_addr);
+CREATE INDEX idx_bootstrap_validator_im_addr ON bootstrap_validator (validator_im_addr);
 
 CREATE TABLE bootstrap_client_chains
 (
@@ -57,8 +57,8 @@ CREATE TABLE bootstrap_staker_assets
     CONSTRAINT fk_asset_id FOREIGN KEY (asset_id) REFERENCES bootstrap_tokens (asset_id)
 );
 
-CREATE INDEX idx_deposits_staker_id ON bootstrap_staker_assets (staker_id);
-CREATE INDEX idx_deposits_asset_id ON bootstrap_staker_assets (asset_id);
+CREATE INDEX idx_bootstrap_deposits_staker_id ON bootstrap_staker_assets (staker_id);
+CREATE INDEX idx_bootstrap_deposits_asset_id ON bootstrap_staker_assets (asset_id);
 
 CREATE TABLE bootstrap_delegation_states
 (
@@ -73,8 +73,8 @@ CREATE TABLE bootstrap_delegation_states
     CONSTRAINT fk_staker_asset FOREIGN KEY (staker_id, asset_id) REFERENCES bootstrap_staker_assets (staker_id, asset_id)
 );
 
-CREATE INDEX idx_delegations_staker_id ON bootstrap_delegation_states (staker_id);
-CREATE INDEX idx_delegations_asset_id ON bootstrap_delegation_states (asset_id);
+CREATE INDEX idx_bootstrap_delegations_staker_id ON bootstrap_delegation_states (staker_id);
+CREATE INDEX idx_bootstrap_delegations_asset_id ON bootstrap_delegation_states (asset_id);
 
 CREATE TABLE bootstrap_operator_assets
 (
@@ -89,8 +89,8 @@ CREATE TABLE bootstrap_operator_assets
     CONSTRAINT fk_operator FOREIGN KEY (operator_addr) REFERENCES bootstrap_validator (validator_im_addr),
     CONSTRAINT chk_total_amount CHECK (total_amount = self_amount + other_amount)
 );
-CREATE INDEX idx_operator_assets_operator ON bootstrap_operator_assets (operator_addr);
-CREATE INDEX idx_operator_assets_asset_id ON bootstrap_operator_assets (asset_id);
+CREATE INDEX idx_bootstrap_operator_assets_operator ON bootstrap_operator_assets (operator_addr);
+CREATE INDEX idx_bootstrap_operator_assets_asset_id ON bootstrap_operator_assets (asset_id);
 
 CREATE TABLE bootstrap_statistics
 (

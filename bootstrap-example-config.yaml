@@ -51,7 +51,7 @@ bootstrap:
       oracle_addr: ""
 
 database:
-  url: "postgresql://imua:123456@localhost:5432/imuachain?sslmode=disable&search_path=public"
+  url: "postgresql://user:password@localhost:5432/db_name?sslmode=disable&search_path=public"
   max_open_connections: 10
   max_idle_connections: 10
   partition_size: 100000
