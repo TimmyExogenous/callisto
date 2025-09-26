@@ -19,7 +19,6 @@ require (
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/lib/pq v1.10.9
 	github.com/pelletier/go-toml v1.9.5
-	github.com/pingcap/log v1.1.0
 	github.com/prometheus/client_golang v1.18.0
 	github.com/proullon/ramsql v0.1.3
 	github.com/rs/zerolog v1.32.0
@@ -379,7 +378,6 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240108191215-35c7eff3a6b1 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
-	gopkg.in/natefinch/lumberjack.v2 v2.0.0 // indirect
 	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	honnef.co/go/tools v0.5.0-0.dev.0.20231205170804-aef76f4feee2 // indirect
