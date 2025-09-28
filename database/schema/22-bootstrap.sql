@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS bootstrap_validator
     updated_at          TIMESTAMP WITHOUT TIME ZONE
 );
 
-CREATE INDEX IF NOT EXISTS idx_validator_im_addr ON bootstrap_validator (validator_im_addr);
+CREATE INDEX IF NOT EXISTS idx_bootstrap_validator_im_addr ON bootstrap_validator (validator_im_addr);
 
 CREATE TABLE IF NOT EXISTS bootstrap_client_chains
 (
