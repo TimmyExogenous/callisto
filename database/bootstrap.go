@@ -201,17 +201,32 @@ WHERE asset_id = $3;`
 }
 
 func (db *Db) SaveBootstrapStakerAsset(a *types.BootstrapStakerAsset) error {
+	tx, err := db.SQL.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if err := db.SaveBootstrapStakerAssetInTx(tx, a); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// SaveBootstrapStakerAssetInTx saves a bootstrap staker asset within an existing transaction
+func (db *Db) SaveBootstrapStakerAssetInTx(tx *sql.Tx, a *types.BootstrapStakerAsset) error {
 	stmt := `
 INSERT INTO bootstrap_staker_assets (
     staker_id, asset_id, deposited, withdrawable, delegated, updated_at
 ) VALUES ($1,$2,$3,$4,$5,$6)
 ON CONFLICT (staker_id, asset_id) DO UPDATE
-SET deposited    = EXCLUDED.deposited,
-    withdrawable = EXCLUDED.withdrawable,
-    delegated    = EXCLUDED.delegated,
+SET deposited    = bootstrap_staker_assets.deposited + EXCLUDED.deposited,
+    withdrawable = bootstrap_staker_assets.withdrawable + EXCLUDED.withdrawable,
+    delegated    = bootstrap_staker_assets.delegated + EXCLUDED.delegated,
     updated_at   = EXCLUDED.updated_at;`
 
-	_, err := db.SQL.Exec(stmt,
+	_, err := tx.Exec(stmt,
 		a.StakerID,
 		a.AssetID,
 		a.Deposited,
@@ -228,8 +243,8 @@ SET deposited    = EXCLUDED.deposited,
 func (db *Db) BootstrapStakerAssetExists(stakerID, assetID string) (bool, error) {
 	stmt := `
 SELECT EXISTS(
-    SELECT 1 
-    FROM bootstrap_staker_assets 
+    SELECT 1
+    FROM bootstrap_staker_assets
     WHERE staker_id = $1 AND asset_id = $2
 );`
 
@@ -241,42 +256,10 @@ SELECT EXISTS(
 	return exists, nil
 }
 
-// DepositBootstrapStakerAsset increases the deposited and withdrawable amount
-// for the given staker and asset. If no record exists, a new one will be created
-// with deposited = depositAmount, withdrawable = depositAmount, delegated = 0.
-// The updated_at timestamp is always set to the current time.
-// TODO: The following two functions might not be used because we fetch the states
-// from bootstrap directly instead of calculating the new states based on the delta value
-// in events. They can be removed if they are not used for handling the states
-// of BTC and XRP either.
-
-func (db *Db) DepositBootstrapStakerAsset(stakerID, assetID string, depositAmount int64) error {
-	stmt := `
-INSERT INTO bootstrap_staker_assets (
-    staker_id, asset_id, deposited, withdrawable, delegated, updated_at
-) VALUES ($1, $2, $3, $3, 0, $4)
-ON CONFLICT (staker_id, asset_id) DO UPDATE
-SET deposited    = bootstrap_staker_assets.deposited + EXCLUDED.deposited,
-    withdrawable = bootstrap_staker_assets.withdrawable + EXCLUDED.withdrawable,
-    updated_at   = EXCLUDED.updated_at;`
-
-	_, err := db.SQL.Exec(
-		stmt,
-		stakerID,
-		assetID,
-		depositAmount,
-		time.Now(),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to deposit bootstrap staker asset: %w", err)
-	}
-	return nil
-}
-
 func (db *Db) ClaimBootstrapStakerAsset(stakerID, assetID string, claimAmount int64, updatedAt time.Time) error {
 	stmt := `
 UPDATE bootstrap_staker_assets
-SET 
+SET
     deposited    = deposited - $3,
     withdrawable = withdrawable - $3,
     updated_at   = $4
@@ -307,15 +290,30 @@ WHERE staker_id = $1
 }
 
 func (db *Db) SaveBootstrapDelegationState(d *types.BootstrapDelegationState) error {
+	tx, err := db.SQL.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if err := db.SaveBootstrapDelegationStateInTx(tx, d); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// SaveBootstrapDelegationStateInTx saves a bootstrap delegation state within an existing transaction
+func (db *Db) SaveBootstrapDelegationStateInTx(tx *sql.Tx, d *types.BootstrapDelegationState) error {
 	stmt := `
 INSERT INTO bootstrap_delegation_states (
     staker_id, asset_id, operator_addr, delegated, updated_at
 ) VALUES ($1,$2,$3,$4,$5)
 ON CONFLICT (staker_id, asset_id, operator_addr) DO UPDATE
-SET delegated  = EXCLUDED.delegated,
+SET delegated  = bootstrap_delegation_states.delegated + EXCLUDED.delegated,
     updated_at = EXCLUDED.updated_at;`
 
-	_, err := db.SQL.Exec(stmt,
+	_, err := tx.Exec(stmt,
 		d.StakerID,
 		d.AssetID,
 		d.OperatorAddr,
@@ -345,6 +343,21 @@ SELECT EXISTS(
 }
 
 func (db *Db) SaveBootstrapOperatorAsset(o *types.BootstrapOperatorAsset) error {
+	tx, err := db.SQL.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if err := db.SaveBootstrapOperatorAssetInTx(tx, o); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// SaveBootstrapOperatorAssetInTx saves a bootstrap operator asset within an existing transaction
+func (db *Db) SaveBootstrapOperatorAssetInTx(tx *sql.Tx, o *types.BootstrapOperatorAsset) error {
 	stmt := `
 INSERT INTO bootstrap_operator_assets (
     operator_addr, asset_id, total_amount, self_amount, other_amount, updated_at
@@ -355,7 +368,7 @@ SET total_amount = EXCLUDED.total_amount,
     other_amount = EXCLUDED.other_amount,
     updated_at   = EXCLUDED.updated_at;`
 
-	_, err := db.SQL.Exec(stmt,
+	_, err := tx.Exec(stmt,
 		o.OperatorAddr,
 		o.AssetID,
 		o.TotalAmount,
