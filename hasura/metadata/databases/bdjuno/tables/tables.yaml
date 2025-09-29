@@ -81,3 +81,6 @@
 - "!include public_bootstrap_tokens.yaml"
 - "!include public_bootstrap_validator.yaml"
 - "!include public_bootstrap_address_bindings.yaml"
+- "!include public_bootstrap_max_usd_value_token_structure.yaml"
+- "!include public_bootstrap_active_staker_count_structure.yaml"
+- "!include public_bootstrap_total_tvl_structure.yaml"

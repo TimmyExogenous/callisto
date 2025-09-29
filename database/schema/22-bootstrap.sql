@@ -36,22 +36,28 @@ CREATE TABLE IF NOT EXISTS bootstrap_tokens
     CONSTRAINT fk_layer_zero_chain_id FOREIGN KEY (layer_zero_chain_id) REFERENCES bootstrap_client_chains (layer_zero_chain_id)
 );
 
+-- The view is required because of Hasura.
+CREATE OR REPLACE VIEW total_tvl_structure AS
+SELECT NULL::NUMERIC AS total;
+
 CREATE OR REPLACE FUNCTION get_total_tvl()
-RETURNS TABLE(total NUMERIC) AS $$
+RETURNS SETOF total_tvl_structure
+LANGUAGE plpgsql STABLE AS $$
 BEGIN
 RETURN QUERY
-SELECT COALESCE(SUM(total_usd_value), 0)
+SELECT COALESCE(SUM(total_usd_value), 0) AS total
 FROM bootstrap_tokens;
 END;
-$$ LANGUAGE plpgsql STABLE;
+$$;
 
-CREATE TYPE max_usd_value_token_structure AS (
-    asset_id             TEXT,
-    name                 TEXT,
-    symbol               TEXT,
-    total_usd_value      NUMERIC,
-    staking_total_amount NUMERIC
-    );
+-- needed for Hasura
+CREATE OR REPLACE VIEW max_usd_value_token_structure AS
+SELECT
+    NULL::TEXT    AS asset_id,
+    NULL::TEXT    AS name,
+    NULL::TEXT    AS symbol,
+    NULL::NUMERIC AS total_usd_value,
+    NULL::NUMERIC AS staking_total_amount;
 
 CREATE OR REPLACE FUNCTION get_max_usd_value_token()
 RETURNS SETOF max_usd_value_token_structure
@@ -92,15 +98,21 @@ CREATE TABLE IF NOT EXISTS bootstrap_staker_assets
 CREATE INDEX IF NOT EXISTS idx_bootstrap_deposits_staker_id ON bootstrap_staker_assets (staker_id);
 CREATE INDEX IF NOT EXISTS idx_bootstrap_deposits_asset_id ON bootstrap_staker_assets (asset_id);
 
+-- The view is required because of Hasura.
+CREATE OR REPLACE VIEW active_staker_count_structure AS
+SELECT NULL::BIGINT AS count;
+
 CREATE OR REPLACE FUNCTION get_active_staker_count()
-RETURNS TABLE(count bigint) AS $$
+RETURNS SETOF active_staker_count_structure
+LANGUAGE plpgsql STABLE AS $$
 BEGIN
 RETURN QUERY
-SELECT COUNT(DISTINCT staker_id)
+SELECT COUNT(DISTINCT staker_id) AS count
 FROM bootstrap_staker_assets
 WHERE deposited > 0;
 END;
-$$ LANGUAGE plpgsql STABLE;
+$$;
+
 
 
 CREATE TABLE IF NOT EXISTS bootstrap_delegation_states
