@@ -20,8 +20,7 @@ type Config struct {
 	BootstrapAddr string `yaml:"bootstrap_addr"`
 	// The following UpdateIntervals specify the interval in minutes at which the
 	// bootstrap states are automatically refreshed.
-	UpdateInterval int64  `yaml:"update_interval"`
-	ETHLZChainID   uint64 `yaml:"eth_lz_chain_id"`
+	ETHLZChainID uint64 `yaml:"eth_lz_chain_id"`
 	// BTC vault address for bootstrap deposits
 	BTCVaultAddr string `yaml:"btc_vault_addr"`
 	// XRP vault address for bootstrap deposits

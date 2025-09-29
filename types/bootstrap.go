@@ -32,6 +32,7 @@ type BootstrapToken struct {
 type BootstrapTokenState struct {
 	BootstrapToken
 	StakingTotalAmount string
+	TotalUSDValue      string
 	UpdatedAt          time.Time
 }
 

@@ -80,3 +80,4 @@
 - "!include public_bootstrap_token_prices.yaml"
 - "!include public_bootstrap_tokens.yaml"
 - "!include public_bootstrap_validator.yaml"
+- "!include public_bootstrap_address_bindings.yaml"

@@ -117,8 +117,8 @@ func (db *Db) SaveBootstrapToken(t *types.BootstrapTokenState) error {
 	stmt := `
 INSERT INTO bootstrap_tokens (
     asset_id, name, symbol, address, decimals,
-    layer_zero_chain_id, staking_total_amount, updated_at
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+    layer_zero_chain_id, staking_total_amount, total_usd_value, updated_at
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
 ON CONFLICT (asset_id) DO UPDATE
 SET name                 = EXCLUDED.name,
     symbol               = EXCLUDED.symbol,
@@ -126,6 +126,7 @@ SET name                 = EXCLUDED.name,
     decimals             = EXCLUDED.decimals,
     layer_zero_chain_id  = EXCLUDED.layer_zero_chain_id,
     staking_total_amount = EXCLUDED.staking_total_amount,
+    total_usd_value      = EXCLUDED.total_usd_value, 
     updated_at           = EXCLUDED.updated_at;`
 
 	_, err := db.SQL.Exec(stmt,
@@ -136,6 +137,7 @@ SET name                 = EXCLUDED.name,
 		t.Decimals,
 		t.LZChainID,
 		t.StakingTotalAmount,
+		t.TotalUSDValue,
 		t.UpdatedAt,
 	)
 	if err != nil {
@@ -144,10 +146,40 @@ SET name                 = EXCLUDED.name,
 	return nil
 }
 
+func (db *Db) GetBootstrapToken(assetID string) (*types.BootstrapTokenState, error) {
+	stmt := `
+SELECT asset_id, name, symbol, address, decimals,
+       layer_zero_chain_id, staking_total_amount, total_usd_value, updated_at
+FROM bootstrap_tokens
+WHERE asset_id = $1
+LIMIT 1;`
+
+	var t types.BootstrapTokenState
+	err := db.SQL.QueryRow(stmt, assetID).Scan(
+		&t.AssetID,
+		&t.Name,
+		&t.Symbol,
+		&t.Address,
+		&t.Decimals,
+		&t.LZChainID,
+		&t.StakingTotalAmount,
+		&t.TotalUSDValue,
+		&t.UpdatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("no bootstrap token found for asset_id %s", assetID)
+		}
+		return nil, fmt.Errorf("failed to get bootstrap token: %w", err)
+	}
+
+	return &t, nil
+}
+
 func (db *Db) ListBootstrapTokens() ([]*types.BootstrapTokenState, error) {
 	stmt := `
 SELECT asset_id, name, symbol, address, decimals,
-       layer_zero_chain_id, staking_total_amount, updated_at
+       layer_zero_chain_id, staking_total_amount,total_usd_value, updated_at
 FROM bootstrap_tokens;`
 
 	rows, err := db.SQL.Query(stmt)
@@ -167,6 +199,7 @@ FROM bootstrap_tokens;`
 			&t.Decimals,
 			&t.LZChainID,
 			&t.StakingTotalAmount,
+			&t.TotalUSDValue,
 			&t.UpdatedAt,
 		)
 		if err != nil {
@@ -182,20 +215,40 @@ FROM bootstrap_tokens;`
 	return tokens, nil
 }
 
-func (db *Db) UpdateBootstrapTokenDepositAmount(assetID string, amount string) error {
+func (db *Db) UpdateBootstrapTokenAmountAndUSDValue(assetID string, amount, usdValue string) error {
 	stmt := `
 UPDATE bootstrap_tokens
 SET staking_total_amount = $1,
-    updated_at = $2
-WHERE asset_id = $3;`
+    total_usd_value = $2,
+    updated_at = $3
+WHERE asset_id = $4;`
 
 	_, err := db.SQL.Exec(stmt,
 		amount,
+		usdValue,
 		time.Now(),
 		assetID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update staking_total_amount for asset_id=%s: %w", assetID, err)
+	}
+	return nil
+}
+
+func (db *Db) UpdateBootstrapTokenUSDValue(assetID string, usdValue string) error {
+	stmt := `
+UPDATE bootstrap_tokens
+SET total_usd_value = $1,
+    updated_at      = $2
+WHERE asset_id = $3;`
+
+	_, err := db.SQL.Exec(stmt,
+		usdValue,
+		time.Now(),
+		assetID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update total_usd_value for asset_id=%s: %w", assetID, err)
 	}
 	return nil
 }
@@ -670,6 +723,27 @@ SET price      = EXCLUDED.price,
 		return fmt.Errorf("failed to save bootstrap token price: %w", err)
 	}
 	return nil
+}
+
+func (db *Db) GetBootstrapTokenPrice(assetID string) (string, error) {
+	var price string
+
+	stmt := `
+SELECT price
+FROM bootstrap_token_prices
+WHERE asset_id = $1
+LIMIT 1;
+`
+
+	err := db.SQL.QueryRow(stmt, assetID).Scan(&price)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("no price found for asset_id %s", assetID)
+		}
+		return "", fmt.Errorf("failed to get bootstrap token price: %w", err)
+	}
+
+	return price, nil
 }
 
 func (db *Db) SaveBootstrapStatistics(tvl string) error {

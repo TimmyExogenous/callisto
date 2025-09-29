@@ -30,10 +30,42 @@ CREATE TABLE IF NOT EXISTS bootstrap_tokens
     decimals             INT     NOT NULL,
     layer_zero_chain_id  BIGINT  NOT NULL,
     staking_total_amount NUMERIC NOT NULL DEFAULT 0,
+    total_usd_value      NUMERIC NOT NULL DEFAULT 0,
     updated_at           TIMESTAMP WITHOUT TIME ZONE,
     -- relational constraint
     CONSTRAINT fk_layer_zero_chain_id FOREIGN KEY (layer_zero_chain_id) REFERENCES bootstrap_client_chains (layer_zero_chain_id)
 );
+
+CREATE OR REPLACE FUNCTION get_total_tvl()
+RETURNS TABLE(total NUMERIC) AS $$
+BEGIN
+RETURN QUERY
+SELECT COALESCE(SUM(total_usd_value), 0)
+FROM bootstrap_tokens;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+CREATE TYPE max_usd_value_token_structure AS (
+    asset_id             TEXT,
+    name                 TEXT,
+    symbol               TEXT,
+    total_usd_value      NUMERIC,
+    staking_total_amount NUMERIC
+    );
+
+CREATE OR REPLACE FUNCTION get_max_usd_value_token()
+RETURNS SETOF max_usd_value_token_structure
+LANGUAGE plpgsql
+STABLE
+AS $$
+BEGIN
+RETURN QUERY
+SELECT t.asset_id, t.name, t.symbol, t.total_usd_value, t.staking_total_amount
+FROM bootstrap_tokens t
+ORDER BY t.total_usd_value DESC
+    LIMIT 1;
+END;
+$$;
 
 CREATE TABLE bootstrap_token_prices
 (
@@ -59,6 +91,17 @@ CREATE TABLE IF NOT EXISTS bootstrap_staker_assets
 
 CREATE INDEX IF NOT EXISTS idx_bootstrap_deposits_staker_id ON bootstrap_staker_assets (staker_id);
 CREATE INDEX IF NOT EXISTS idx_bootstrap_deposits_asset_id ON bootstrap_staker_assets (asset_id);
+
+CREATE OR REPLACE FUNCTION get_active_staker_count()
+RETURNS TABLE(count bigint) AS $$
+BEGIN
+RETURN QUERY
+SELECT COUNT(DISTINCT staker_id)
+FROM bootstrap_staker_assets
+WHERE deposited > 0;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
 
 CREATE TABLE IF NOT EXISTS bootstrap_delegation_states
 (

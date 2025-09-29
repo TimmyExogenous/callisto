@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	sdkmath "cosmossdk.io/math"
 	"fmt"
 	"math/big"
 	"time"
@@ -14,7 +15,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func (m *Module) updateStatesAfterStakerAssetChange(stakerAddr, assetAddr common.Address) (string, string, error) {
+func (m *Module) updateStatesAfterDepositAndClaiming(stakerAddr, assetAddr common.Address) (string, string, error) {
 	stakerID, assetID, err := m.updateStakerAsset(stakerAddr, assetAddr)
 	if err != nil {
 		return "", "", err
@@ -26,7 +27,30 @@ func (m *Module) updateStatesAfterStakerAssetChange(stakerAddr, assetAddr common
 		return "", "", err
 	}
 
-	err = m.database.UpdateBootstrapTokenDepositAmount(assetID, assetDepositAmount.String())
+	usdValue := sdkmath.LegacyZeroDec()
+	priceStr, err := m.database.GetBootstrapTokenPrice(assetID)
+	if err != nil {
+		log.Err(err).Msg("call updateStatesAfterDepositAndClaiming")
+		// Using zero as the USD value; continue handling other assets without returning
+	} else {
+		// get token info
+		bootstrapTokenState, err := m.database.GetBootstrapToken(assetID)
+		if err != nil {
+			return "", "", err
+		}
+		// calculate the total USD value of this asset
+		priceDec, err := sdkmath.LegacyNewDecFromStr(priceStr)
+		if err != nil {
+			log.Err(err).Str("dbPrice", priceStr).Msg("failed to parse the db price to a big legacyDec")
+			// don't return to continue addressing the other assets
+		} else {
+			divisor := sdkmath.NewIntWithDecimal(1, int(bootstrapTokenState.Decimals)) // #nosec G115
+			usdValue = priceDec.MulInt(sdkmath.NewIntFromBigInt(assetDepositAmount)).QuoInt(divisor)
+		}
+
+	}
+
+	err = m.database.UpdateBootstrapTokenAmountAndUSDValue(assetID, assetDepositAmount.String(), usdValue.String())
 	if err != nil {
 		return "", "", err
 	}
@@ -35,7 +59,7 @@ func (m *Module) updateStatesAfterStakerAssetChange(stakerAddr, assetAddr common
 
 func (m *Module) updateStatesAfterDelegationChange(stakerAddr, assetAddr common.Address, validatorAddr string) error {
 	// update the states of staker assets
-	stakerID, assetID, err := m.updateStatesAfterStakerAssetChange(stakerAddr, assetAddr)
+	stakerID, assetID, err := m.updateStakerAsset(stakerAddr, assetAddr)
 	if err != nil {
 		return err
 	}
@@ -247,6 +271,7 @@ func (m *Module) RunAsyncOperations() {
 							LZChainID: m.Config.ETHLZChainID,
 						},
 						StakingTotalAmount: big.NewInt(0).String(),
+						TotalUSDValue:      big.NewInt(0).String(),
 						UpdatedAt:          time.Now(),
 					})
 					if err != nil {
@@ -257,14 +282,14 @@ func (m *Module) RunAsyncOperations() {
 			}
 		case e := <-depositCh:
 			if e.Success {
-				_, _, err := m.updateStatesAfterStakerAssetChange(e.Depositor, e.Token)
+				_, _, err := m.updateStatesAfterDepositAndClaiming(e.Depositor, e.Token)
 				if err != nil {
 					log.Err(err).Str("depositor", e.Depositor.String()).Str("token", e.Token.String()).Str("amount", e.Amount.String()).Msg("failed to handle the deposit event")
 				}
 			}
 		case e := <-claimCh:
 			if e.Success {
-				_, _, err := m.updateStatesAfterStakerAssetChange(e.Withdrawer, e.Token)
+				_, _, err := m.updateStatesAfterDepositAndClaiming(e.Withdrawer, e.Token)
 				if err != nil {
 					log.Err(err).Str("withdrawer", e.Withdrawer.String()).Str("token", e.Token.String()).Str("amount", e.Amount.String()).Msg("failed to handle the claim event")
 				}

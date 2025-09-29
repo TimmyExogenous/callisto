@@ -156,6 +156,24 @@ func (m *Module) refetchETHStates() error {
 		if err != nil {
 			return fmt.Errorf("failed to call DepositsByToken,tokenAddr:%s,err:%s", tokenInfo.TokenAddress, err)
 		}
+
+		usdValue := sdkmath.LegacyZeroDec()
+		priceStr, err := m.database.GetBootstrapTokenPrice(assetID)
+		if err != nil {
+			log.Err(err).Msg("call refetchETHStates")
+			// Using zero as the USD value; continue handling other assets without returning
+		} else {
+			// calculate the total USD value of this asset
+			priceDec, err := sdkmath.LegacyNewDecFromStr(priceStr)
+			if err != nil {
+				log.Err(err).Str("dbPrice", priceStr).Msg("failed to parse the db price to a big legacyDec")
+				// don't return to continue addressing the other assets
+				break
+			}
+			divisor := sdkmath.NewIntWithDecimal(1, int(tokenInfo.Decimals)) // #nosec G115
+			usdValue = priceDec.MulInt(sdkmath.NewIntFromBigInt(assetDepositAmount)).QuoInt(divisor)
+		}
+
 		err = m.database.SaveBootstrapToken(&types.BootstrapTokenState{
 			BootstrapToken: types.BootstrapToken{
 				AssetID:   assetID,
@@ -167,6 +185,7 @@ func (m *Module) refetchETHStates() error {
 			},
 			UpdatedAt:          time.Now(),
 			StakingTotalAmount: assetDepositAmount.String(),
+			TotalUSDValue:      usdValue.String(),
 		})
 		if err != nil {
 			return err
@@ -2158,6 +2177,7 @@ func (m *Module) updatePricesAndTVL() error {
 			if err != nil {
 				log.Err(err).Str("module", "bootstrap").Str("assetID", t.AssetID).Str("name", t.Name).Str("symbol", t.Symbol).
 					Msg("failed to get the asset price from binance")
+				totalTVL.AddMut(sdkmath.LegacyMustNewDecFromStr(t.TotalUSDValue))
 			} else {
 				// update the price
 				err = m.database.SaveBootstrapTokenPrice(t.AssetID, price.Price)
@@ -2174,6 +2194,10 @@ func (m *Module) updatePricesAndTVL() error {
 				divisor := sdkmath.NewIntWithDecimal(1, int(t.Decimals)) // #nosec G115
 				usdValue := priceDec.MulInt(stakingAmountInt).QuoInt(divisor)
 				totalTVL.AddMut(usdValue)
+				err = m.database.UpdateBootstrapTokenUSDValue(t.AssetID, usdValue.String())
+				if err != nil {
+					return err
+				}
 			}
 		} else {
 			// fetch the price from ChainLink
@@ -2203,6 +2227,10 @@ func (m *Module) updatePricesAndTVL() error {
 			// calculate the total USD value of this asset
 			usdValue := operatorkeeper.CalculateUSDValue(stakingAmountInt, sdkmath.NewIntFromBigInt(roundData.Answer), uint32(t.Decimals), decimals)
 			totalTVL.AddMut(usdValue)
+			err = m.database.UpdateBootstrapTokenUSDValue(t.AssetID, usdValue.String())
+			if err != nil {
+				return err
+			}
 		}
 	}
 

@@ -18,11 +18,30 @@ bootstrap:
   btc_rpc: ""
   xrp_rpc: ""
   bootstrap_addr: "0xf21FB1667A8Aa3D3ea365D3D1D257f3E4fdd0651"
+  eth_lz_chain_id: 40217
+
+  # BTC Testnet Configuration
+  btc_vault_addr: 'tb1q3w7ar6cxdc7j3g8dunqdve589l0t4383pp8efk'
+  btc_min_confirmations: 6
+  btc_min_amount: 1000 # 0.00001 BTC in satoshis
+  btc_start_height: 100000
+
+  # XRP Testnet Configuration
+  xrp_vault_addr: 'rEZgFxT3LbJyhEWrFgf3zUNdv3zCt4KUBJ'
+  xrp_min_confirmations: 6
+  xrp_min_amount: 10000000 # 50 XRP in drops
+  xrp_destination_tag: 9999
+  xrp_start_ledger: 877578
+
+  # Incremental scanning configuration
+  scan_batch_size: 100
+  reorg_depth: 6
+
   eth_update_interval: 1440
   btc_update_interval: 5
   xrp_update_interval: 5
   price_update_interval: 60
-  eth_lz_chain_id: 40217
+
   client_chain_infos:
     - name: "Hoodi"
       meta_info: "Ethereum-testnet known as Hoodi"
