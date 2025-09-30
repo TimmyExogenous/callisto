@@ -21,12 +21,13 @@ var (
 )
 
 type Module struct {
-	database      *callistodb.Db
-	EthHTTPClient *ethclient.Client
-	EthWSClient   *ethclient.Client
-	XrpClient     *xrpl.Client
-	Config        Config
-	BootstrapAddr common.Address
+	database            *callistodb.Db
+	EthHTTPClient       *ethclient.Client
+	EthWSClient         *ethclient.Client
+	FeederEthHTTPClient *ethclient.Client
+	XrpClient           *xrpl.Client
+	Config              Config
+	BootstrapAddr       common.Address
 	// No dedicated clients for BTC and XRP, since we may call their RPCs
 	// directly using the http package.
 	ctx               context.Context
@@ -68,6 +69,11 @@ func NewModule(
 	}
 	ethWSClient := ethclient.NewClient(websocketRC)
 
+	feederRC, err := rpc.DialContext(context.Background(), bootstrapCfg.FeederEthHTTP)
+	if err != nil {
+		panic(err)
+	}
+
 	xrpClient := xrpl.NewClient(xrpl.ClientConfig{URL: bootstrapCfg.XRPRPC})
 	err = xrpClient.Ping([]byte("PING"))
 	if err != nil {
@@ -92,17 +98,18 @@ func NewModule(
 	}
 
 	module := &Module{
-		database:           database,
-		EthHTTPClient:      ethHTTPClient,
-		EthWSClient:        ethWSClient,
-		XrpClient:          xrpClient,
-		Config:             *bootstrapCfg,
-		BootstrapAddr:      bootstrapAddr,
-		ctx:                ctx,
-		bootstrapSession:   bootstrapSession,
-		bootstrapFilterer:  bootstrapFilterer,
-		btcAddressMappings: make(map[string]string),
-		xrpAddressMappings: make(map[string]string),
+		database:            database,
+		EthHTTPClient:       ethHTTPClient,
+		EthWSClient:         ethWSClient,
+		FeederEthHTTPClient: ethclient.NewClient(feederRC),
+		XrpClient:           xrpClient,
+		Config:              *bootstrapCfg,
+		BootstrapAddr:       bootstrapAddr,
+		ctx:                 ctx,
+		bootstrapSession:    bootstrapSession,
+		bootstrapFilterer:   bootstrapFilterer,
+		btcAddressMappings:  make(map[string]string),
+		xrpAddressMappings:  make(map[string]string),
 	}
 	return module
 }

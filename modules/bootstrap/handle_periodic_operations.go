@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"math/big"
 	"net/http"
 	"sort"
@@ -14,7 +15,6 @@ import (
 	"time"
 
 	sdkmath "cosmossdk.io/math"
-	"github.com/adshao/go-binance/v2"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -31,7 +31,7 @@ func (m *Module) RegisterPeriodicOperations(scheduler *gocron.Scheduler) error {
 	log.Debug().Str("module", "bootstrap").Msg("setting up periodic tasks")
 
 	// Schedule a cron job to run.
-	if _, err := scheduler.Every(m.Config.ETHUpdateInterval).Minutes().Do(func() {
+	if _, err := scheduler.Every(m.Config.ETHUpdateInterval).Minutes().WaitForSchedule().Do(func() {
 		m.refetchETHStates()
 	}); err != nil {
 		return fmt.Errorf("failed to set up the periodic ETH states refetch operation: %s", err)
@@ -49,7 +49,7 @@ func (m *Module) RegisterPeriodicOperations(scheduler *gocron.Scheduler) error {
 		return fmt.Errorf("failed to set up the periodic XRP states refetch operation: %s", err)
 	}
 
-	if _, err := scheduler.Every(m.Config.PriceUpdateInterval).Minutes().Do(func() {
+	if _, err := scheduler.Every(m.Config.PriceUpdateInterval).Minutes().WaitForSchedule().Do(func() {
 		m.updatePricesAndTVL()
 	}); err != nil {
 		return fmt.Errorf("failed to set up the periodic prices update operation: %s", err)
@@ -159,7 +159,7 @@ func (m *Module) refetchETHStates() error {
 		usdValue := sdkmath.LegacyZeroDec()
 		priceStr, err := m.database.GetBootstrapTokenPrice(assetID)
 		if err != nil {
-			log.Err(err).Msg("call refetchETHStates")
+			log.Err(err).Str("assetID", assetID).Msg("refetchETHStates: get token price from database")
 			// Using zero as the USD value; continue handling other assets without returning
 		} else {
 			// calculate the total USD value of this asset
@@ -1799,6 +1799,33 @@ func (m *Module) getXRPVaultTransactionsFromLedger(fromLedger, toLedger int64) (
 	return allTxs, nil
 }
 
+type CoinbaseResponse struct {
+	Data struct {
+		Base     string `json:"base"`
+		Currency string `json:"currency"`
+		Amount   string `json:"amount"`
+	} `json:"data"`
+}
+
+func GetSpotPrice(symbol string) (string, error) {
+	url := fmt.Sprintf("https://api.coinbase.com/v2/prices/%s-USD/spot", symbol)
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	var result CoinbaseResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", err
+	}
+
+	return result.Data.Amount, nil
+}
+
 func (m *Module) updatePricesAndTVL() error {
 	log.Debug().Str("module", "bootstrap").Str("refetching", "prices and TVL").
 		Msg("refetching prices and TVL")
@@ -1814,7 +1841,6 @@ func (m *Module) updatePricesAndTVL() error {
 	totalTVL := sdkmath.LegacyZeroDec()
 
 	for _, t := range tokens {
-		client := binance.NewClient("", "")
 		stakingAmountInt, ok := sdkmath.NewIntFromString(t.StakingTotalAmount)
 		if !ok {
 			log.Error().Str("stakingTotalAmount", t.StakingTotalAmount).Msg("failed to parse the staking amount to a big int")
@@ -1823,23 +1849,21 @@ func (m *Module) updatePricesAndTVL() error {
 
 		oracleFeedAddr, ok := oracleFeedsMap[t.AssetID]
 		if !ok {
-			price, err := client.NewAveragePriceService().
-				Symbol(fmt.Sprintf("%sUSDT", t.Symbol)).
-				Do(m.ctx)
+			price, err := GetSpotPrice(t.Symbol)
 			if err != nil {
 				log.Err(err).Str("module", "bootstrap").Str("assetID", t.AssetID).Str("name", t.Name).Str("symbol", t.Symbol).
-					Msg("failed to get the asset price from binance")
+					Msg("failed to get the asset price from coinbase")
 				totalTVL.AddMut(sdkmath.LegacyMustNewDecFromStr(t.TotalUSDValue))
 			} else {
 				// update the price
-				err = m.database.SaveBootstrapTokenPrice(t.AssetID, price.Price)
+				err = m.database.SaveBootstrapTokenPrice(t.AssetID, price)
 				if err != nil {
 					return err
 				}
 				// calculate the total USD value of this asset
-				priceDec, err := sdkmath.LegacyNewDecFromStr(price.Price)
+				priceDec, err := sdkmath.LegacyNewDecFromStr(price)
 				if err != nil {
-					log.Err(err).Str("binancePrice", price.Price).Msg("failed to parse the binance price to a big legacyDec")
+					log.Err(err).Str("binancePrice", price).Msg("failed to parse the coinbase price to a big legacyDec")
 					// don't return to continue addressing the other assets
 					continue
 				}
@@ -1853,7 +1877,7 @@ func (m *Module) updatePricesAndTVL() error {
 			}
 		} else {
 			// fetch the price from ChainLink
-			aggregatorContract, err := aggregatorv3.NewAggregatorV3Interface(oracleFeedAddr, m.EthHTTPClient)
+			aggregatorContract, err := aggregatorv3.NewAggregatorV3Interface(oracleFeedAddr, m.FeederEthHTTPClient)
 			if err != nil {
 				return err
 			}

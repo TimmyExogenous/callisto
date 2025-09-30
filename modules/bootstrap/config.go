@@ -15,6 +15,7 @@ const (
 type Config struct {
 	ETHHttp       string `yaml:"eth_http"`
 	ETHWebsocket  string `yaml:"eth_websocket"`
+	FeederEthHTTP string `yaml:"feeder_eth_http"`
 	BTCRPC        string `yaml:"btc_rpc"`
 	XRPRPC        string `yaml:"xrp_rpc"`
 	BootstrapAddr string `yaml:"bootstrap_addr"`

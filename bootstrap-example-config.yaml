@@ -15,7 +15,7 @@ pruning:
 bootstrap:
   eth_http: 'https://rpc.hoodi.ethpandaops.io'
   eth_websocket: 'wss://0xrpc.io/hoodi'
-
+  feeder_eth_http: 'https://ethereum-rpc.publicnode.com'
   bootstrap_addr: "0xf21FB1667A8Aa3D3ea365D3D1D257f3E4fdd0651"
   eth_lz_chain_id: 40217
 

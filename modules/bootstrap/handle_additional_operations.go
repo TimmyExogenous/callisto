@@ -58,6 +58,9 @@ func (m *Module) RunAdditionalOperations() error {
 			return err
 		}
 	}
+	if err := m.refetchETHStates(); err != nil {
+		return err
+	}
 	if err := m.updatePricesAndTVL(); err != nil {
 		return err
 	}
