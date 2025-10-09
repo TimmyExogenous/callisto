@@ -705,7 +705,7 @@ func (m *Module) isValidDepositTransaction(tx *types.BTCTx) error {
 	vaultOutputCount := 0
 	for _, vout := range tx.Vout {
 		if normalizeAddress(vout.ScriptPubKeyAddr) == vaultAddr &&
-			vout.Value >= int64(m.Config.BTCMinAmount) {
+			vout.Value >= m.Config.BTCMinAmount {
 			vaultOutputCount++
 		}
 	}
@@ -1054,15 +1054,6 @@ func (m *Module) processBTCTxWithTransaction(tx types.BTCTx) error {
 			return nil
 		})
 	})
-}
-
-// isValidatorRegistered checks if validator is registered in bootstrap contract
-func (m *Module) isValidatorRegistered(validatorAddr string) (bool, error) {
-	validatorInfo, err := m.bootstrapSession.Validators(validatorAddr)
-	if err != nil {
-		return false, err
-	}
-	return validatorInfo.Name != "", nil
 }
 
 // saveBTCTransaction saves BTC transaction data to database within a transaction
@@ -1810,6 +1801,7 @@ type CoinbaseResponse struct {
 func GetSpotPrice(symbol string) (string, error) {
 	url := fmt.Sprintf("https://api.coinbase.com/v2/prices/%s-USD/spot", symbol)
 
+	//nolint:gosec // G107: url is trusted
 	resp, err := http.Get(url)
 	if err != nil {
 		return "", err

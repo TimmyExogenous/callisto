@@ -1,10 +1,11 @@
 package bootstrap
 
 import (
-	sdkmath "cosmossdk.io/math"
 	"fmt"
 	"math/big"
 	"time"
+
+	sdkmath "cosmossdk.io/math"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -15,16 +16,16 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func (m *Module) updateStatesAfterDepositAndClaiming(stakerAddr, assetAddr common.Address) (string, string, error) {
-	stakerID, assetID, err := m.updateStakerAsset(stakerAddr, assetAddr)
+func (m *Module) updateStatesAfterDepositAndClaiming(stakerAddr, assetAddr common.Address) error {
+	_, assetID, err := m.updateStakerAsset(stakerAddr, assetAddr)
 	if err != nil {
-		return "", "", err
+		return err
 	}
 
 	// update the total deposit amount in asset states
 	assetDepositAmount, err := m.bootstrapSession.DepositsByToken(assetAddr)
 	if err != nil {
-		return "", "", err
+		return err
 	}
 
 	usdValue := sdkmath.LegacyZeroDec()
@@ -36,7 +37,7 @@ func (m *Module) updateStatesAfterDepositAndClaiming(stakerAddr, assetAddr commo
 		// get token info
 		bootstrapTokenState, err := m.database.GetBootstrapToken(assetID)
 		if err != nil {
-			return "", "", err
+			return err
 		}
 		// calculate the total USD value of this asset
 		priceDec, err := sdkmath.LegacyNewDecFromStr(priceStr)
@@ -50,11 +51,7 @@ func (m *Module) updateStatesAfterDepositAndClaiming(stakerAddr, assetAddr commo
 
 	}
 
-	err = m.database.UpdateBootstrapTokenAmountAndUSDValue(assetID, assetDepositAmount.String(), usdValue.String())
-	if err != nil {
-		return "", "", err
-	}
-	return stakerID, assetID, nil
+	return m.database.UpdateBootstrapTokenAmountAndUSDValue(assetID, assetDepositAmount.String(), usdValue.String())
 }
 
 func (m *Module) updateStatesAfterDelegationChange(stakerAddr, assetAddr common.Address, validatorAddr string) error {
@@ -282,14 +279,14 @@ func (m *Module) RunAsyncOperations() {
 			}
 		case e := <-depositCh:
 			if e.Success {
-				_, _, err := m.updateStatesAfterDepositAndClaiming(e.Depositor, e.Token)
+				err = m.updateStatesAfterDepositAndClaiming(e.Depositor, e.Token)
 				if err != nil {
 					log.Err(err).Str("depositor", e.Depositor.String()).Str("token", e.Token.String()).Str("amount", e.Amount.String()).Msg("failed to handle the deposit event")
 				}
 			}
 		case e := <-claimCh:
 			if e.Success {
-				_, _, err := m.updateStatesAfterDepositAndClaiming(e.Withdrawer, e.Token)
+				err = m.updateStatesAfterDepositAndClaiming(e.Withdrawer, e.Token)
 				if err != nil {
 					log.Err(err).Str("withdrawer", e.Withdrawer.String()).Str("token", e.Token.String()).Str("amount", e.Amount.String()).Msg("failed to handle the claim event")
 				}

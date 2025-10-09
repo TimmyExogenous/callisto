@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+
 	"github.com/xrpscan/xrpl-go"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
