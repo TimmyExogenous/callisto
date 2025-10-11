@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/forbole/callisto/v4/types"
+	"github.com/rs/zerolog/log"
 )
 
 // loadExistingBindings loads existing address bindings from database into memory
@@ -68,5 +69,6 @@ func (m *Module) RunAdditionalOperations() error {
 	if err := m.loadExistingBindings(); err != nil {
 		return fmt.Errorf("failed to load existing address bindings: %w", err)
 	}
+	log.Info().Str("module", "bootstrap").Msg("Complete Ethereum state sync on startup.")
 	return nil
 }
