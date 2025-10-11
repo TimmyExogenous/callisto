@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -279,14 +280,22 @@ SET deposited    = EXCLUDED.deposited,
 }
 
 // SaveBootstrapStakerAssetInTx saves a bootstrap staker asset within an existing transaction
-func (db *Db) SaveBootstrapStakerAssetInTx(tx *sql.Tx, a *types.BootstrapStakerAsset) error {
-	var err error
+func (db *Db) SaveBootstrapStakerAssetInTx(tx *sql.Tx, a *types.BootstrapStakerAsset) (retErr error) {
+	var ownTx bool
 	if tx == nil {
+		var err error
 		tx, err = db.SQL.Begin()
 		if err != nil {
 			return fmt.Errorf("failed to begin transaction: %w", err)
 		}
-		defer tx.Rollback()
+		ownTx = true
+		defer func() {
+			if ownTx {
+				if rbErr := tx.Rollback(); rbErr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("failed to rollback transaction: %w", rbErr))
+				}
+			}
+		}()
 	}
 	stmt := `
 INSERT INTO bootstrap_staker_assets (
@@ -298,7 +307,7 @@ SET deposited    = bootstrap_staker_assets.deposited + EXCLUDED.deposited,
     delegated    = bootstrap_staker_assets.delegated + EXCLUDED.delegated,
     updated_at   = EXCLUDED.updated_at;`
 
-	_, err = tx.Exec(stmt,
+	_, err := tx.Exec(stmt,
 		a.StakerID,
 		a.AssetID,
 		a.Deposited,
@@ -309,7 +318,17 @@ SET deposited    = bootstrap_staker_assets.deposited + EXCLUDED.deposited,
 	if err != nil {
 		return fmt.Errorf("failed to save bootstrap staker asset: %w", err)
 	}
-	return tx.Commit()
+
+	if !ownTx {
+		return nil
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	ownTx = false
+	return nil
 }
 
 func (db *Db) BootstrapStakerAssetExists(stakerID, assetID string) (bool, error) {
@@ -384,14 +403,22 @@ SET delegated  = EXCLUDED.delegated,
 }
 
 // SaveBootstrapDelegationStateInTx saves a bootstrap delegation state within an existing transaction
-func (db *Db) SaveBootstrapDelegationStateInTx(tx *sql.Tx, d *types.BootstrapDelegationState) error {
-	var err error
+func (db *Db) SaveBootstrapDelegationStateInTx(tx *sql.Tx, d *types.BootstrapDelegationState) (retErr error) {
+	var ownTx bool
 	if tx == nil {
+		var err error
 		tx, err = db.SQL.Begin()
 		if err != nil {
 			return fmt.Errorf("failed to begin transaction: %w", err)
 		}
-		defer tx.Rollback()
+		ownTx = true
+		defer func() {
+			if ownTx {
+				if rbErr := tx.Rollback(); rbErr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("failed to rollback transaction: %w", rbErr))
+				}
+			}
+		}()
 	}
 	stmt := `
 INSERT INTO bootstrap_delegation_states (
@@ -401,7 +428,7 @@ ON CONFLICT (staker_id, asset_id, operator_addr) DO UPDATE
 SET delegated  = bootstrap_delegation_states.delegated + EXCLUDED.delegated,
     updated_at = EXCLUDED.updated_at;`
 
-	_, err = tx.Exec(stmt,
+	_, err := tx.Exec(stmt,
 		d.StakerID,
 		d.AssetID,
 		d.OperatorAddr,
@@ -411,7 +438,17 @@ SET delegated  = bootstrap_delegation_states.delegated + EXCLUDED.delegated,
 	if err != nil {
 		return fmt.Errorf("failed to save bootstrap delegation state: %w", err)
 	}
-	return tx.Commit()
+
+	if !ownTx {
+		return nil
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	ownTx = false
+	return nil
 }
 
 func (db *Db) BootstrapDelegationExists(stakerID, assetID, operatorAddr string) (bool, error) {
