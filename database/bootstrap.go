@@ -277,7 +277,7 @@ func (db *Db) UpdateBootstrapTokenInTx(tx *sql.Tx, assetID string, stakingDelta 
 	usdValue := sdkmath.LegacyZeroDec()
 	priceStr, err := db.GetBootstrapTokenPrice(assetID)
 	if err != nil {
-		log.Err(err).Str("assetID", assetID).Msg("refetchETHStates: get token price from database")
+		log.Err(err).Str("assetID", assetID).Msg("UpdateBootstrapTokenInTx: get token price from database")
 		// Using zero as the USD value; continue handling other assets without returning
 	} else {
 		// calculate the total USD value of this asset
@@ -615,7 +615,13 @@ LIMIT 1;`
 func (db *Db) UpdateBootstrapOperatorAssetInTx(tx *sql.Tx, assetID, operatorAddr, stakerIMAddr string, delegationDelta string) error {
 	operatorAsset, err := db.GetBootstrapOperatorAsset(operatorAddr, assetID)
 	if err != nil {
-		return err
+		operatorAsset = &types.BootstrapOperatorAsset{
+			AssetID:      assetID,
+			OperatorAddr: operatorAddr,
+			TotalAmount:  sdkmath.ZeroInt().String(),
+			SelfAmount:   sdkmath.ZeroInt().String(),
+			OtherAmount:  sdkmath.ZeroInt().String(),
+		}
 	}
 	totalAmount, ok := sdkmath.NewIntFromString(operatorAsset.TotalAmount)
 	if !ok {
