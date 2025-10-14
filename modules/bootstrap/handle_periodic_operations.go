@@ -1085,8 +1085,13 @@ func (m *Module) saveBTCTransaction(dbTx *sql.Tx, tx types.BTCTx) error {
 		UpdatedAt:    time.Now(),
 	}
 
-	if err := m.database.SaveBootstrapStakerAssetInTx(nil, stakerAsset); err != nil {
+	if err := m.database.SaveBootstrapStakerAssetInTx(dbTx, stakerAsset); err != nil {
 		return fmt.Errorf("failed to save staker asset: %s", err)
+	}
+
+	// update the related token states
+	if err := m.database.UpdateBootstrapTokenInTx(dbTx, stakerAsset.AssetID, stakerAsset.Deposited); err != nil {
+		return fmt.Errorf("failed to update the state of bootstrap token: %s", err)
 	}
 
 	// Save delegation state
@@ -1100,6 +1105,11 @@ func (m *Module) saveBTCTransaction(dbTx *sql.Tx, tx types.BTCTx) error {
 
 	if err := m.database.SaveBootstrapDelegationStateInTx(dbTx, delegationState); err != nil {
 		return fmt.Errorf("failed to save delegation state: %s", err)
+	}
+
+	// update the related operator asset states
+	if err := m.database.UpdateBootstrapOperatorAssetInTx(dbTx, delegationState.AssetID, delegationState.OperatorAddr, tx.ImuachainAddress, delegationState.Delegated); err != nil {
+		return fmt.Errorf("failed to update the state of operator asset: %s", err)
 	}
 
 	log.Info().
@@ -1661,6 +1671,11 @@ func (m *Module) saveXRPTransaction(dbTx *sql.Tx, tx types.XRPTransaction) error
 		return fmt.Errorf("failed to save staker asset: %s", err)
 	}
 
+	// update the related token states
+	if err := m.database.UpdateBootstrapTokenInTx(dbTx, stakerAsset.AssetID, stakerAsset.Deposited); err != nil {
+		return fmt.Errorf("failed to update the state of bootstrap token: %s", err)
+	}
+
 	// Save delegation state
 	delegationState := &types.BootstrapDelegationState{
 		StakerID:     stakerID,
@@ -1672,6 +1687,11 @@ func (m *Module) saveXRPTransaction(dbTx *sql.Tx, tx types.XRPTransaction) error
 
 	if err := m.database.SaveBootstrapDelegationStateInTx(dbTx, delegationState); err != nil {
 		return fmt.Errorf("failed to save delegation state: %s", err)
+	}
+
+	// update the related operator asset states
+	if err := m.database.UpdateBootstrapOperatorAssetInTx(dbTx, delegationState.AssetID, delegationState.OperatorAddr, tx.ImuachainAddress, delegationState.Delegated); err != nil {
+		return fmt.Errorf("failed to update the state of operator asset: %s", err)
 	}
 
 	log.Info().
