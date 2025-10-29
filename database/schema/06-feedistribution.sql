@@ -126,42 +126,6 @@ CREATE TABLE operator_rewards
     CONSTRAINT fk_avs_addr FOREIGN KEY (avs_addr) REFERENCES avs (avs_addr)
 );
 
--- Table to store rewards of stakers per AVS
-CREATE TABLE staker_rewards
-(
-    -- ID of the staker
-    staker_id           TEXT      NOT NULL,
-
-    -- Address of the AVS, stored in lowercase
-    avs_addr            TEXT      NOT NULL CHECK (avs_addr = lower(avs_addr)),
-
-    -- Array of outstanding rewards (denom + amount)
-    outstanding_rewards DEC_COIN[] NOT NULL,
-
-    -- Array of withdrawn rewards (denom + amount)
-    withdrawn_rewards   DEC_COIN[] NOT NULL,
-
-    -- Array of withdrawn rewards (denom + amount)
-    -- derived value via addition; only kept for speed (claimed_rewards = outstanding_rewards + withdrawn_rewards)
-    claimed_rewards     DEC_COIN[] NOT NULL,
-
-    -- Array of unclaimed rewards (denom + amount)
-    unclaimed_rewards   DEC_COIN[] NOT NULL,
-
-    -- Array of total rewards (denom + amount)
-    -- derived value via addition; only kept for speed (total_rewards = claimed_rewards + unclaimed_rewards)
-    total_rewards       DEC_COIN[] NOT NULL,
-
-    -- The timestamp of the last update to outstanding and unclaimed rewards.
-    reward_update_time  TIMESTAMP NOT NULL,
-
-    -- Composite key ensures uniqueness per staker per AVS
-    PRIMARY KEY (staker_id, avs_addr),
-
-    CONSTRAINT fk_avs_addr FOREIGN KEY (avs_addr) REFERENCES avs (avs_addr),
-);
-CREATE INDEX idx_staker_rewards_claim_time ON staker_rewards (claim_time, staker_id);
-
 CREATE TABLE distribution_indexer_params
 (
     one_row_id                      BOOLEAN   NOT NULL DEFAULT TRUE PRIMARY KEY,

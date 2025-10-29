@@ -21,6 +21,7 @@ chain:
     - "dogfood"
     - "oracle"
     - "slashing"
+    - "tokenomics"
 
 telemetry:
   port: 26658
@@ -32,6 +33,20 @@ pruning:
 
 dogfood:
   chain_id_without_revision: "imuachaintestnet_233"
+
+tokenomics:
+  genesis_supply: 314159265                    # from tokenomics documentation
+  genesis_pool_ratio: "0.0300"                   # 3% of genesis supply
+  genesis_pool_airdrop_duration: 90            # 90 days after TGE
+  genesis_pool_airdrop_interval: 7             # every 7 days (weekly)
+  liquidity_incentive_ratios: # annual liquidity incentive ratios
+    - "0.0200"
+    - "0.0100"
+    - "0.0050"
+    - "0.0025"
+    - "0.0013"
+  liquidity_incentive_airdrop_duration: 20   # 20 years
+  liquidity_incentive_airdrop_interval: "0.25"   # every quarter (90 days ≈ 0.25 years)
 
 node:
   type: remote

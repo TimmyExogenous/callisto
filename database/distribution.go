@@ -501,6 +501,7 @@ func (db *Db) UpsertStakerRewards(
 	outstandingRewards sdk.DecCoins,
 	withdrawnRewards sdk.DecCoins,
 	unclaimedRewards sdk.DecCoins,
+	height int64,
 ) error {
 	if outstandingRewards == nil {
 		outstandingRewards = sdk.NewDecCoins()
@@ -530,12 +531,13 @@ func (db *Db) UpsertStakerRewards(
 			unclaimed_rewards,
 			claimed_rewards,
 			total_rewards,
+		    height,
 			reward_update_time
 		)
 		VALUES (
 			$1, $2,
 			$3, $4, $5,
-			$6, $7, $8
+			$6, $7, $8, $9,
 		)
 		ON CONFLICT (staker_id, avs_addr)
 		DO UPDATE SET
@@ -544,6 +546,7 @@ func (db *Db) UpsertStakerRewards(
 			unclaimed_rewards = EXCLUDED.unclaimed_rewards,
 			claimed_rewards = EXCLUDED.claimed_rewards,
 			total_rewards = EXCLUDED.total_rewards,
+		    height = EXCLUDED.heigth,
 			reward_update_time = EXCLUDED.reward_update_time
 	`
 	_, err := db.SQL.Exec(upsertStmt,
@@ -554,6 +557,7 @@ func (db *Db) UpsertStakerRewards(
 		pq.Array(dbtypes.NewDbDecCoins(unclaimedRewards)),
 		pq.Array(dbtypes.NewDbDecCoins(claimedRewards)),
 		pq.Array(dbtypes.NewDbDecCoins(totalRewards)),
+		height,
 		rewardUpdateTime,
 	)
 	if err != nil {
@@ -561,6 +565,78 @@ func (db *Db) UpsertStakerRewards(
 	}
 
 	return nil
+}
+
+func (db *Db) GetStakerRewards(stakerID, avsAddr string) (*types.StakerRewards, error) {
+	query := `
+		SELECT 
+			staker_id,
+			avs_addr,
+			outstanding_rewards,
+			withdrawn_rewards,
+			unclaimed_rewards,
+			claimed_rewards,
+			total_rewards,
+			reward_update_time
+		FROM staker_rewards
+		WHERE staker_id = $1 AND avs_addr = $2
+		LIMIT 1
+	`
+
+	row := db.SQL.QueryRow(query, stakerID, avsAddr)
+	var (
+		outstandingRewards dbtypes.DbDecCoins
+		withdrawnRewards   dbtypes.DbDecCoins
+		unclaimedRewards   dbtypes.DbDecCoins
+		claimedRewards     dbtypes.DbDecCoins
+		totalRewards       dbtypes.DbDecCoins
+		rewardUpdateTime   time.Time
+	)
+
+	err := row.Scan(
+		&stakerID,
+		&avsAddr,
+		&outstandingRewards,
+		&withdrawnRewards,
+		&unclaimedRewards,
+		&claimedRewards,
+		&totalRewards,
+		&rewardUpdateTime,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil // not found
+		}
+		return nil, fmt.Errorf("failed to query staker_rewards: %w", err)
+	}
+
+	return &types.StakerRewards{
+		StakerID: stakerID,
+		AVSAddr:  avsAddr,
+		StakerClaimedRewards: distrtypes.StakerClaimedRewards{
+			OutstandingRewards: outstandingRewards.ToDecCoins(),
+			WithdrawnRewards:   withdrawnRewards.ToDecCoins(),
+		},
+		UnclaimedRewards: unclaimedRewards.ToDecCoins(),
+		ClaimedRewards:   claimedRewards.ToDecCoins(),
+		TotalRewards:     totalRewards.ToDecCoins(),
+		RewardUpdateTime: rewardUpdateTime,
+	}, nil
+}
+
+func (db *Db) UpdateStakerRewardsDelta(
+	stakerID string,
+	avsAddr string,
+	outstandingRewards sdk.DecCoins,
+	withdrawnRewardsDelta sdk.DecCoins,
+	unclaimedRewards sdk.DecCoins,
+) error {
+	originalStakerRewards, err := db.GetStakerRewards(stakerID, avsAddr)
+	if err != nil {
+		return err
+	}
+	newWithdrawnRewards := originalStakerRewards.WithdrawnRewards.Add(withdrawnRewardsDelta...)
+	return db.UpsertStakerRewards(stakerID, avsAddr, outstandingRewards, newWithdrawnRewards, unclaimedRewards, height)
 }
 
 func (db *Db) SaveDistributionIndexerParams(params *dbtypes.DistributionIndexerParams) error {

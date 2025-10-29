@@ -6,104 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"github.com/forbole/callisto/v4/types"
-	"github.com/lib/pq"
 )
 
-func (db *Db) SaveTokenomicsParams(params *types.TokenomicsParams) error {
-	stmt := `
-INSERT INTO tokenomics_params (
-    one_row_id,
-    genesis_supply,
-    genesis_pool_ratio,
-    genesis_pool_airdrop_duration,
-    genesis_pool_airdrop_interval,
-    liquidity_incentive_ratios,
-    liquidity_incentive_airdrop_duration,
-    liquidity_incentive_airdrop_interval,
-    genesis_validator_reward_ratio,
-    created_at
-) 
-VALUES (
-    TRUE,  -- one_row_id, always true
-    COALESCE($1, DEFAULT),
-    COALESCE($2, DEFAULT),
-    COALESCE($3, DEFAULT),
-    COALESCE($4, DEFAULT),
-    COALESCE($5, DEFAULT),
-    COALESCE($6, DEFAULT),
-    COALESCE($7, DEFAULT),
-    COALESCE($8, DEFAULT),
- 	NOW(),
-)
-ON CONFLICT (one_row_id) DO UPDATE
-	SET
-		genesis_pool_ratio = COALESCE(EXCLUDED.genesis_pool_ratio, tokenomics_params.genesis_pool_ratio),
-    	genesis_pool_airdrop_duration = COALESCE(EXCLUDED.genesis_pool_airdrop_duration, tokenomics_params.genesis_pool_airdrop_duration),
-		genesis_pool_airdrop_interval = COALESCE(EXCLUDED.genesis_pool_airdrop_interval, tokenomics_params.genesis_pool_airdrop_interval),
-		liquidity_incentive_ratios = COALESCE(EXCLUDED.liquidity_incentive_ratios, tokenomics_params.liquidity_incentive_ratios),
-        liquidity_incentive_airdrop_duration = COALESCE(EXCLUDED.liquidity_incentive_airdrop_duration, tokenomics_params.liquidity_incentive_airdrop_duration),
-		liquidity_incentive_airdrop_interval = COALESCE(EXCLUDED.liquidity_incentive_airdrop_interval, tokenomics_params.liquidity_incentive_airdrop_interval),
-		genesis_validator_reward_ratio = COALESCE(EXCLUDED.genesis_validator_reward_ratio, tokenomics_params.genesis_validator_reward_ratio),
-		created_at = NOW()`
-
-	_, err := db.SQL.Exec(stmt,
-		params.GenesisSupply,
-		params.GenesisPoolRatio,
-		params.GenesisPoolAirdropDuration,
-		params.GenesisPoolAirdropInterval,
-		pq.Array(params.LiquidityIncentiveRatios),
-		params.LiquidityIncentiveAirdropDuration,
-		params.LiquidityIncentiveAirdropInterval,
-		params.GenesisValidatorRewardRatio,
-	)
-
-	if err != nil {
-		return fmt.Errorf("error while saving tokenomics params: %w", err)
+func (db *Db) SaveGenesisPoolAirdropRound(round *types.CommonAirdropRound) error {
+	if round.AirdropType != types.GenesisPoolAirdrop {
+		return fmt.Errorf("invalid airdrop type:%d", round.AirdropType)
 	}
-
-	return nil
-}
-
-func (db *Db) GetTokenomicsParams() (*types.TokenomicsParams, error) {
-	stmt := `
-SELECT
-    genesis_supply,
-    genesis_pool_ratio,
-    genesis_pool_airdrop_duration,
-    genesis_pool_airdrop_interval,
-    liquidity_incentive_ratios,
-    liquidity_incentive_airdrop_duration,
-    liquidity_incentive_airdrop_interval,
-    genesis_validator_reward_ratio,
-    created_at
-FROM tokenomics_params
-WHERE one_row_id = TRUE
-LIMIT 1;`
-
-	var params types.TokenomicsParams
-
-	err := db.SQL.QueryRow(stmt).Scan(
-		&params.GenesisSupply,
-		&params.GenesisPoolRatio,
-		&params.GenesisPoolAirdropDuration,
-		&params.GenesisPoolAirdropInterval,
-		pq.Array(&params.LiquidityIncentiveRatios),
-		&params.LiquidityIncentiveAirdropDuration,
-		&params.LiquidityIncentiveAirdropInterval,
-		&params.GenesisValidatorRewardRatio,
-		&params.CreatedAt,
-	)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("tokenomics parameters not found")
-		}
-		return nil, fmt.Errorf("failed to query tokenomics parameters: %w", err)
-	}
-
-	return &params, nil
-}
-
-func (db *Db) SaveGenesisPoolAirdropRound(round *types.GenesisPoolAirdropRound) error {
 	stmt := `
 INSERT INTO genesis_pool_airdrop_rounds (
     airdrop_round,
@@ -135,26 +43,7 @@ ON CONFLICT (airdrop_round) DO NOTHING;`
 	return nil
 }
 
-func (db *Db) HasGenesisPoolAirdropRound(roundIndex int) (bool, error) {
-	stmt := `
-SELECT 1
-FROM genesis_pool_airdrop_rounds
-WHERE airdrop_round = $1
-LIMIT 1;`
-
-	var exists int
-	err := db.SQL.QueryRow(stmt, roundIndex).Scan(&exists)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return false, nil // round does not exist
-		}
-		return false, fmt.Errorf("failed to check if airdrop round %d exists: %w", roundIndex, err)
-	}
-
-	return true, nil
-}
-
-func (db *Db) GetGenesisPoolAirdropRound(roundIndex int) (*types.GenesisPoolAirdropRound, error) {
+func (db *Db) GetGenesisPoolAirdropRound(roundIndex int) (*types.CommonAirdropRound, error) {
 	stmt := `
 SELECT
     airdrop_round,
@@ -169,7 +58,7 @@ SELECT
 FROM genesis_pool_airdrop_rounds
 WHERE airdrop_round = $1;`
 
-	var round types.GenesisPoolAirdropRound
+	var round types.CommonAirdropRound
 	err := db.SQL.QueryRow(stmt, roundIndex).Scan(
 		&round.AirdropRound,
 		&round.BlockHeight,
@@ -187,7 +76,46 @@ WHERE airdrop_round = $1;`
 		}
 		return nil, fmt.Errorf("failed to query airdrop round %d: %w", roundIndex, err)
 	}
+	round.AirdropType = types.GenesisPoolAirdrop
+	return &round, nil
+}
 
+func (db *Db) GetLatestGenesisPoolAirdropRound() (*types.CommonAirdropRound, error) {
+	stmt := `
+SELECT
+    airdrop_round,
+    block_height,
+    total_stakers,
+    total_usd_value,
+    total_reward_amount,
+    distributed_stakers,
+    round_duration,
+    created_at,
+    is_completed
+FROM genesis_pool_airdrop_rounds
+ORDER BY airdrop_round DESC
+LIMIT 1;`
+
+	var round types.CommonAirdropRound
+	err := db.SQL.QueryRow(stmt).Scan(
+		&round.AirdropRound,
+		&round.BlockHeight,
+		&round.TotalStakers,
+		&round.TotalUSDValue,
+		&round.TotalRewardAmount,
+		&round.DistributedStakers,
+		&round.RoundDuration,
+		&round.CreatedAt,
+		&round.IsCompleted,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// Don't return an error since there may be no round info initially.
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to query latest genesis pool airdrop round: %w", err)
+	}
+	round.AirdropType = types.GenesisPoolAirdrop
 	return &round, nil
 }
 
@@ -311,4 +239,78 @@ func (db *Db) UpdateGenesisAirdropRewardsByRound(
 	}
 
 	return nil
+}
+
+func (db *Db) SaveLiquidityAirdropRound(round *types.CommonAirdropRound) error {
+	if round.AirdropType != types.LiquidityIncentivesAirdrop {
+		return fmt.Errorf("invalid airdrop type:%d", round.AirdropType)
+	}
+	stmt := `
+INSERT INTO liquidity_incentives_airdrop_rounds (
+    airdrop_round,
+    block_height,
+    total_stakers,
+    total_native_imua_rewards,
+    total_reward_amount,
+    distributed_stakers,
+    round_duration,
+    created_at,
+    is_completed
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+ON CONFLICT (airdrop_round) DO NOTHING;`
+
+	_, err := db.SQL.Exec(stmt,
+		round.AirdropRound,
+		round.BlockHeight,
+		round.TotalStakers,
+		round.TotalNativeIMUARewards,
+		round.TotalRewardAmount,
+		round.DistributedStakers,
+		round.RoundDuration,
+		round.CreatedAt,
+		round.IsCompleted,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save liquidity incentive airdrop round %d: %w", round.AirdropRound, err)
+	}
+	return nil
+}
+
+func (db *Db) GetLatestLiquidityIncentivesAirdropRound() (*types.CommonAirdropRound, error) {
+	stmt := `
+SELECT
+    airdrop_round,
+    block_height,
+    total_stakers,
+    total_native_imua_rewards,
+    total_reward_amount,
+    distributed_stakers,
+    round_duration,
+    created_at,
+    is_completed
+FROM genesis_pool_airdrop_rounds
+ORDER BY airdrop_round DESC
+LIMIT 1;`
+
+	var round types.CommonAirdropRound
+	err := db.SQL.QueryRow(stmt).Scan(
+		&round.AirdropRound,
+		&round.BlockHeight,
+		&round.TotalStakers,
+		&round.TotalNativeIMUARewards,
+		&round.TotalRewardAmount,
+		&round.DistributedStakers,
+		&round.RoundDuration,
+		&round.CreatedAt,
+		&round.IsCompleted,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// Don't return an error since there may be no round info initially.
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to query latest liquidity incentives airdrop round: %w", err)
+	}
+	round.AirdropType = types.LiquidityIncentivesAirdrop
+	return &round, nil
 }

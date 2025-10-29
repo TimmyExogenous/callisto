@@ -1,8 +1,10 @@
 package types
 
 import (
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	assetstypes "github.com/imua-xyz/imuachain/x/assets/types"
 	distrtypes "github.com/imua-xyz/imuachain/x/feedistribution/types"
+	"time"
 )
 
 // DistributionParams represents the parameters of the x/distribution module
@@ -36,4 +38,14 @@ type AVSRewardDistribution struct {
 	AVSAddr         string
 	EpochIdentifier string
 	distrtypes.AVSRewardDistribution
+}
+
+type StakerRewards struct {
+	StakerID string
+	AVSAddr  string
+	distrtypes.StakerClaimedRewards
+	ClaimedRewards   sdk.DecCoins
+	UnclaimedRewards sdk.DecCoins
+	TotalRewards     sdk.DecCoins
+	RewardUpdateTime time.Time
 }

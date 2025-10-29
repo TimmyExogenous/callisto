@@ -23,7 +23,7 @@ func (m *Module) HandleBlock(
 	return m.HandleGenesisPoolAirdropRound(block)
 }
 
-func (m *Module) HandleGenesisPoolAirdropForStakers(roundReward sdkmath.Int, round *types.GenesisPoolAirdropRound) error {
+func (m *Module) HandleGenesisPoolAirdropForStakers(roundReward sdkmath.Int, round *types.CommonAirdropRound) error {
 	var stakerAirdrop types.GenesisStakerAirdrop
 	totalUSDValue := sdkmath.LegacyZeroDec()
 	stakerUSDValue := sdkmath.LegacyZeroDec()
@@ -100,75 +100,99 @@ func (m *Module) HandleGenesisPoolAirdropForStakers(roundReward sdkmath.Int, rou
 	}
 	return nil
 }
+func (m *Module) calculateAirdropRound(block *tmctypes.ResultBlock, airdropType types.AirdropType) (*types.GeneralRoundInfo, error) {
+	oneDay := int64(24 * time.Hour)
+	oneYear := 365 * oneDay
+	var interval, duration int64
+	var latestAirdropRound func() (*types.CommonAirdropRound, error)
+	switch airdropType {
+	case types.GenesisPoolAirdrop:
+		interval = m.cfg.GenesisPoolAirdropInterval * oneDay
+		duration = m.cfg.GenesisPoolAirdropDuration * oneDay
+		latestAirdropRound = m.db.GetLatestGenesisPoolAirdropRound
+	case types.LiquidityIncentivesAirdrop:
+		interval = m.cfg.LiquidityIncentiveAirdropInterval.MulInt64(oneYear).TruncateInt64()
+		duration = m.cfg.LiquidityIncentiveAirdropDuration * oneYear
+		latestAirdropRound = m.db.GetLatestLiquidityIncentivesAirdropRound
+	default:
+		return nil, fmt.Errorf("invalid airdrop type:%d", airdropType)
+	}
 
-func (m *Module) HandleGenesisPoolAirdropRound(block *tmctypes.ResultBlock) error {
+	if interval == 0 || duration == 0 {
+		// do nothing when the interval or duration is zero.
+		log.Info().Msg("the interval or duration is zero")
+		return nil, nil
+	}
+
+	latestAirdropRoundInfo, err := latestAirdropRound()
+	if err != nil {
+		return nil, err
+	}
+
+	var roundStart time.Time
+	var latestRoundID int
 	// get the genesis time
 	genesis, err := m.db.GetGenesis()
 	if err != nil {
-		return fmt.Errorf("error getting genesis: %w", err)
+		return nil, fmt.Errorf("error getting genesis: %w", err)
 	}
-	// calculate the round id by the genesis and block time.
 	blockTime := block.Block.Time
-	durFromGenesis := int64(blockTime.Sub(genesis.Time))
-	tokenomicParams, err := m.db.GetTokenomicsParams()
-	if err != nil {
-		return fmt.Errorf("error getting tokenomic paramters: %w", err)
-	}
-	if tokenomicParams.GenesisPoolAirdropInterval == nil {
-		return fmt.Errorf("error: GenesisPoolAirdropInterval is nil")
-	} else if *tokenomicParams.GenesisPoolAirdropInterval <= 0 {
-		return fmt.Errorf("error invalid interval for genesis pool airdrop: %d", *tokenomicParams.GenesisPoolAirdropInterval)
+	if latestAirdropRoundInfo == nil {
+		roundStart = genesis.Time
+	} else {
+		roundStart = latestAirdropRoundInfo.CreatedAt
+		latestRoundID = latestAirdropRoundInfo.AirdropRound
 	}
 
-	oneDay := int64(24 * time.Hour)
-	interval := *tokenomicParams.LiquidityIncentiveAirdropInterval
-	duration := *tokenomicParams.GenesisPoolAirdropDuration
-	roundNumber := int((duration + interval - 1) / interval)
-	airdropEndTime := genesis.Time.Add(time.Duration(duration * oneDay))
+	// calculate the round id by the genesis and block time.
+	durFromStart := int64(blockTime.Sub(roundStart))
+	airdropEndTime := genesis.Time.Add(time.Duration(duration))
+	if (durFromStart < interval && blockTime.Before(airdropEndTime)) ||
+		!roundStart.Before(airdropEndTime) {
+		// Do nothing because the airdrop round is not due yet or the airdrop has already ended.
+		return nil, nil
+	}
+	// the roundID will start from 1.
+	roundID := latestRoundID + 1
+	roundDur := durFromStart
 
-	roundID := int(durFromGenesis / (interval * oneDay))
-	roundDur := interval
-	if roundID == 0 || roundID > roundNumber {
-		// Do nothing because the first airdrop round is not due yet or the airdrop has already ended.
+	return &types.GeneralRoundInfo{
+		RoundID:         roundID,
+		RoundDur:        roundDur,
+		RoundStart:      roundStart,
+		GenesisTime:     genesis.Time,
+		PreRound:        latestAirdropRoundInfo,
+		AirdropDur:      duration,
+		AirdropInterval: interval,
+	}, nil
+}
+
+func (m *Module) HandleGenesisPoolAirdropRound(block *tmctypes.ResultBlock) error {
+	if m.cfg.GenesisSupply == 0 || m.cfg.GenesisPoolRatio.IsZero() {
+		// do nothing when the genesis supply or the genesis pool ratio is zero.
+		log.Info().Msg("the genesis supply or the genesis pool ratio is zero")
 		return nil
-	} else if roundID == roundNumber-1 && blockTime.Compare(airdropEndTime) >= 0 {
-		// Since the interval may not divide the duration evenly, the final round needs to be processed
-		// right after the airdrop end time, which means its duration might be shorter than the interval.
-		roundID = roundNumber
-		roundDur = duration - interval*(int64(roundNumber)-1)
 	}
-	// check if this round has already addressed
-	exist, err := m.db.HasGenesisPoolAirdropRound(roundID)
+
+	generalRoundInfo, err := m.calculateAirdropRound(block, types.GenesisPoolAirdrop)
 	if err != nil {
-		return fmt.Errorf("error when checking genesis pool airdrop round: %w", err)
+		return err
 	}
-	if exist {
-		// Do nothing because this round has been addressed.
+
+	if generalRoundInfo == nil {
 		return nil
 	}
 
-	round := &types.GenesisPoolAirdropRound{
-		AirdropRound:  roundID,
+	round := &types.CommonAirdropRound{
+		AirdropRound:  generalRoundInfo.RoundID,
 		BlockHeight:   block.Block.Height,
-		RoundDuration: roundDur,
-		CreatedAt:     time.Now(),
+		RoundDuration: generalRoundInfo.RoundDur,
+		CreatedAt:     block.Block.Time,
 	}
 	// calculate the total reward amount for this round
-	if tokenomicParams.GenesisSupply == nil {
-		return fmt.Errorf("error: GenesisSupply is nil")
-	}
-	genesisSupplyInt, ok := sdkmath.NewIntFromString(*tokenomicParams.GenesisSupply)
-	if !ok {
-		return fmt.Errorf("invalid GenesisSupply: %s", *tokenomicParams.GenesisSupply)
-	}
-	if tokenomicParams.GenesisPoolRatio == nil {
-		return fmt.Errorf("error: GenesisPoolRatio is nil")
-	}
-	genesisPoolRatio, err := sdkmath.LegacyNewDecFromStr(*tokenomicParams.GenesisPoolRatio)
-	if !ok {
-		return fmt.Errorf("invalid GenesisPoolRatio: %s,err:%w", *tokenomicParams.GenesisPoolRatio, err)
-	}
-	roundReward := genesisPoolRatio.MulInt(genesisSupplyInt).MulInt64(roundDur).QuoInt64(duration).TruncateInt()
+	genesisSupplyInt := sdkmath.NewInt(m.cfg.GenesisSupply)
+
+	roundReward := m.cfg.GenesisPoolRatio.MulInt(genesisSupplyInt).MulInt64(generalRoundInfo.RoundDur).QuoInt64(generalRoundInfo.AirdropDur).TruncateInt()
 	round.TotalRewardAmount = roundReward.String()
 
 	// calculate and address the airdrop for all genesis stakers.
@@ -182,4 +206,36 @@ func (m *Module) HandleGenesisPoolAirdropRound(block *tmctypes.ResultBlock) erro
 	}
 
 	return nil
+}
+
+func (m *Module) HandleLiquidityIncentivesAirdropRound(block *tmctypes.ResultBlock) error {
+	if m.cfg.GenesisSupply == 0 {
+		// do nothing when the genesis supply is zero.
+		log.Info().Msg("the genesis supply is zero")
+		return nil
+	}
+	generalRoundInfo, err := m.calculateAirdropRound(block, types.LiquidityIncentivesAirdrop)
+	if err != nil {
+		return err
+	}
+	if generalRoundInfo == nil {
+		return nil
+	}
+
+	round := &types.CommonAirdropRound{
+		AirdropRound:  generalRoundInfo.RoundID,
+		BlockHeight:   block.Block.Height,
+		RoundDuration: generalRoundInfo.RoundDur,
+		CreatedAt:     block.Block.Time,
+	}
+	// calculate the total reward amount for this round
+	genesisSupplyInt := sdkmath.NewInt(m.cfg.GenesisSupply)
+	oneYear := 365 * 24 * time.Hour
+	var rewardRatioIndex int
+	if generalRoundInfo.PreRound != nil {
+		// The start time of this round should be the end of the previous round, and each round is always created at the end.
+		rewardRatioIndex = int(generalRoundInfo.PreRound.CreatedAt.Sub(generalRoundInfo.GenesisTime) / oneYear)
+	}
+	rewardRatiosLength := len(m.cfg.LiquidityIncentiveRatios)
+	rewardRatio := sdkmath.LegacyZeroDec()
 }

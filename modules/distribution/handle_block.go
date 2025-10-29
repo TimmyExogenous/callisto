@@ -171,7 +171,7 @@ func (m *Module) handleUpdateStakerRewards(block *tmctypes.ResultBlock) error {
 				stakerID, avsAddr,
 				claimedRewards.OutstandingRewards,
 				claimedRewards.WithdrawnRewards,
-				unclaimed); err != nil {
+				unclaimed, block.Block.Height); err != nil {
 				return fmt.Errorf("failed to upsert staker rewards for staker: %s, avs: %s, err: %w", stakerID, avsAddr, err)
 			}
 		}

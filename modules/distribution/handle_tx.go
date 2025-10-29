@@ -475,7 +475,7 @@ func (m *Module) handleWithdrawRewardFromAVS(events []abci.Event, height int64) 
 			unclaimedRewardsForAVS = sdk.NewDecCoins()
 		}
 		// update withdrawn commission in the database
-		err = m.db.UpsertStakerRewardsWithWithdrawn(
+		err = m.db.UpdateStakerRewardsDelta(
 			stakerID.Value,
 			avsAddrAttr.Value,
 			withdrawnRewards,
@@ -483,7 +483,7 @@ func (m *Module) handleWithdrawRewardFromAVS(events []abci.Event, height int64) 
 			unclaimedRewardsForAVS,
 		)
 		if err != nil {
-			return fmt.Errorf("failed to upsert withdrawn rewards for stakerID %s and avs %s: %w",
+			return fmt.Errorf("failed to update withdrawn rewards for stakerID %s and avs %s: %w",
 				stakerID.Value, avsAddrAttr.Value, err)
 		}
 	}
