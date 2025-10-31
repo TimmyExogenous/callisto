@@ -40,9 +40,6 @@ func (m *Module) HandleTx(tx *juno.Tx) error {
 	if err := m.handleWithdrawCommissionFromAVS(tx.Events); err != nil {
 		return fmt.Errorf("error while handl events about withdrawing commission from AVS: %s", err)
 	}
-	if err := m.handleWithdrawRewardFromAVS(tx.Events, tx.Height); err != nil {
-		return fmt.Errorf("error while handl events about withdrawing rewards from AVS: %s", err)
-	}
 	return nil
 }
 
@@ -416,75 +413,6 @@ func (m *Module) handleWithdrawCommissionFromAVS(events []abci.Event) error {
 		if err != nil {
 			return fmt.Errorf("failed to save withdrawn commission for operator %s and avs %s: %w",
 				operatorAddrAttr.Value, avsAddrAttr.Value, err)
-		}
-	}
-
-	return nil
-}
-
-// handleWithdrawRewardFromAVS filters, parses, and stores events emitted
-// when a staker withdraws reward from AVS.
-func (m *Module) handleWithdrawRewardFromAVS(events []abci.Event, height int64) error {
-	events = juno.FindEventsByType(events, distrtypes.EventTypeWithdrawRewardFromAVS)
-
-	stakerUnclaimedRewards := make(map[string]distrtypes.CommonAVSRewards)
-	for _, event := range events {
-		// Extract attributes
-		stakerID, err := juno.FindAttributeByKey(event, distrtypes.AttributeKeyStakerID)
-		if err != nil {
-			return fmt.Errorf("failed to get stakerID: %w", err)
-		}
-
-		avsAddrAttr, err := juno.FindAttributeByKey(event, distrtypes.AttributeKeyAvsAddress)
-		if err != nil {
-			return fmt.Errorf("failed to get AVS address: %w", err)
-		}
-
-		withdrawnDecCoins, err := juno.FindAttributeByKey(event, distrtypes.AttributeKeyWithdrawDecCoinsFromAVS)
-		if err != nil {
-			return fmt.Errorf("failed to get the withdrawn decCoins: %w", err)
-		}
-
-		oustStandingRewardsDecCoins, err := juno.FindAttributeByKey(event, distrtypes.AttributeKeyStakerOutstandingRewards)
-		if err != nil {
-			return fmt.Errorf("failed to get the outstanding rewards after withdrawing: %w", err)
-		}
-
-		// Parse DecCoins
-		withdrawnRewards, err := sdk.ParseDecCoins(withdrawnDecCoins.Value)
-		if err != nil {
-			return fmt.Errorf("failed to parse the withdraw amounts: %w", err)
-		}
-
-		outstandingRewards, err := sdk.ParseDecCoins(oustStandingRewardsDecCoins.Value)
-		if err != nil {
-			return fmt.Errorf("failed to parse the outstanding rewards: %w", err)
-		}
-
-		// query and update unclaimed rewards to ensure state consistency.
-		unclaimedRewards, ok := stakerUnclaimedRewards[stakerID.Value]
-		if !ok {
-			unclaimedRewards, err = m.source.StakerUnclaimedRewards(height, stakerID.Value)
-			if err != nil {
-				return fmt.Errorf("failed to query the unclaimed rewards: %w, stakerID:%s", err, stakerID.Value)
-			}
-			stakerUnclaimedRewards[stakerID.Value] = unclaimedRewards
-		}
-		unclaimedRewardsForAVS := unclaimedRewards.RewardsOf(avsAddrAttr.Value)
-		if unclaimedRewardsForAVS == nil {
-			unclaimedRewardsForAVS = sdk.NewDecCoins()
-		}
-		// update withdrawn commission in the database
-		err = m.db.UpdateStakerRewardsDelta(
-			stakerID.Value,
-			avsAddrAttr.Value,
-			withdrawnRewards,
-			outstandingRewards,
-			unclaimedRewardsForAVS,
-		)
-		if err != nil {
-			return fmt.Errorf("failed to update withdrawn rewards for stakerID %s and avs %s: %w",
-				stakerID.Value, avsAddrAttr.Value, err)
 		}
 	}
 

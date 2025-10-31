@@ -52,19 +52,22 @@ func (s Source) Params(height int64) (distrtypes.Params, error) {
 	return res.Params, nil
 }
 
-func (s Source) StakerAllClaimedRewards(height int64, stakerID string) ([]distrtypes.StakerClaimedRewardsPerAVS, error) {
-	res, err := s.distrClient.StakerAllClaimedRewards(
+func (s Source) StakerAVSClaimedRewards(height int64, stakerID, avs string) (*distrtypes.StakerClaimedRewards, error) {
+	res, err := s.distrClient.StakerClaimedRewards(
 		remote.GetHeightRequestContext(s.Ctx, height),
-		&distrtypes.QueryStakerAllClaimedRewardsRequest{StakerId: stakerID},
+		&distrtypes.QueryStakerClaimedRewardsRequest{
+			StakerId: stakerID,
+			Avs:      avs,
+		},
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	return res.Rewards, nil
+	return res.StakerClaimedRewards, nil
 }
 
-func (s Source) StakerUnclaimedRewards(height int64, stakerID string) (distrtypes.CommonAVSRewards, error) {
+func (s Source) StakerAVSUnclaimedRewards(height int64, stakerID, avs string) (sdk.DecCoins, error) {
 	res, err := s.distrClient.StakerUnclaimedRewards(
 		remote.GetHeightRequestContext(s.Ctx, height),
 		&distrtypes.QueryStakerUnclaimedRewardsRequest{StakerId: stakerID},
@@ -73,5 +76,5 @@ func (s Source) StakerUnclaimedRewards(height int64, stakerID string) (distrtype
 		return nil, err
 	}
 
-	return res.Rewards, nil
+	return distrtypes.CommonAVSRewards(res.Rewards).RewardsOf(avs), nil
 }

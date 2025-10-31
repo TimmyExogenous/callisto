@@ -136,8 +136,6 @@ func NewDbOperatorRewardProportions(props []distrtypes.OperatorRewardProportion)
 }
 
 type DistributionIndexerParams struct {
-	StakerRewardsUpdateInterval *int64
 	CommunityPoolUpdateInterval *int64
 	UpdateTime                  *time.Time
-	LastStakerRewardUpdateTime  *time.Time
 }

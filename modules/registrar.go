@@ -5,6 +5,7 @@ import (
 	"github.com/forbole/callisto/v4/modules/assets"
 	"github.com/forbole/callisto/v4/modules/avs"
 	"github.com/forbole/callisto/v4/modules/delegation"
+	"github.com/forbole/callisto/v4/modules/distribution"
 	"github.com/forbole/callisto/v4/modules/dogfood"
 	"github.com/forbole/callisto/v4/modules/epochs"
 	"github.com/forbole/callisto/v4/modules/immint"
@@ -173,6 +174,7 @@ func (r *Registrar) BuildModules(ctx registrar.Context) jmodules.Modules {
 		// imslashTypes.ModuleName,
 		// distrtypes.ModuleName,
 		// crisistypes.ModuleName,
-		tokenomics.NewModule(db),
+		distribution.NewModule(sources.DistributionSource, cdc, db),
+		tokenomics.NewModule(sources.DistributionSource, ctx.JunoConfig, db),
 	}
 }

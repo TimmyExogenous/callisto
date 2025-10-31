@@ -8,6 +8,6 @@ import (
 type Source interface {
 	AVSCommunityPool(height int64, avsAddr string) (sdk.DecCoins, error)
 	Params(height int64) (distrtypes.Params, error)
-	StakerAllClaimedRewards(height int64, stakerID string) ([]distrtypes.StakerClaimedRewardsPerAVS, error)
-	StakerUnclaimedRewards(height int64, stakerID string) (distrtypes.CommonAVSRewards, error)
+	StakerAVSClaimedRewards(height int64, stakerID, avs string) (*distrtypes.StakerClaimedRewards, error)
+	StakerAVSUnclaimedRewards(height int64, stakerID, avs string) (sdk.DecCoins, error)
 }

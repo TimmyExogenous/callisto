@@ -42,3 +42,18 @@ type CommonAirdropRound struct {
 	DistributedStakers     int         // Number of stakers who have received their rewards
 	IsCompleted            bool        // Indicates whether the reward distribution is finished
 }
+
+type LiquidityStakerAirdrop struct {
+	StakerID            string     // Unique identifier of the staker
+	AirdropRound        int        // Airdrop round index
+	OutstandingRewards  string     // Amount of outstanding rewards (NUMERIC)
+	WithdrawnRewards    string     // Amount of withdrawn rewards (NUMERIC)
+	ClaimedRewards      string     // Amount of claimed rewards (NUMERIC, derived)
+	UnclaimedRewards    string     // Amount of unclaimed rewards (NUMERIC)
+	TotalRewards        string     // Total reward amount (NUMERIC, derived)
+	RoundNativeRewards  string     // Total round native reward amount (NUMERIC, derived)
+	AirdropRewardAmount string     // The airdrop reward amount allocated to the staker (NUMERIC)
+	IsDistributed       bool       // Whether the reward has been distributed
+	DistributedAt       *time.Time // When the reward was distributed (nullable)
+	CreatedAt           time.Time  // Record creation timestamp
+}

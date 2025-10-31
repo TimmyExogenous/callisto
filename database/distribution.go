@@ -5,11 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	dbtypes "github.com/forbole/callisto/v4/database/types"
+	assetstypes "github.com/imua-xyz/imuachain/x/assets/types"
 	distrtypes "github.com/imua-xyz/imuachain/x/feedistribution/types"
 	"strings"
-	"time"
-
-	dbtypes "github.com/forbole/callisto/v4/database/types"
 
 	"github.com/forbole/callisto/v4/types"
 
@@ -120,6 +119,43 @@ SET name = EXCLUDED.name,
 		return fmt.Errorf("failed to save avs reward asset: %w", err)
 	}
 	return nil
+}
+
+// GetAVSAssetInfo retrieves the asset information of a given AVS reward asset.
+func (db *Db) GetAVSAssetInfo(avsAddr string, assetID string) (*assetstypes.AssetInfo, error) {
+	stmt := `
+SELECT
+	name,
+	symbol,
+	address,
+	decimals,
+	layer_zero_chain_id,
+	imuachain_index,
+	meta_info
+FROM avs_reward_assets
+WHERE avs_addr = $1 AND asset_id = $2
+LIMIT 1;`
+
+	row := db.SQL.QueryRow(stmt, avsAddr, assetID)
+
+	var info assetstypes.AssetInfo
+	err := row.Scan(
+		&info.Name,
+		&info.Symbol,
+		&info.Address,
+		&info.Decimals,
+		&info.LayerZeroChainID,
+		&info.ImuaChainIndex,
+		&info.MetaInfo,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("asset not found for AVS (%s, asset_id %s)", avsAddr, assetID)
+		}
+		return nil, fmt.Errorf("failed to query AVS asset info (%s, asset_id %s): %w", avsAddr, assetID, err)
+	}
+
+	return &info, nil
 }
 
 func (db *Db) UpdateAVSRewardAssetMetadata(
@@ -489,225 +525,4 @@ func (db *Db) WithdrawOperatorCommission(
 	}
 
 	return nil
-}
-
-// UpsertStakerRewards inserts or updates the reward tracking data
-// for a given staker and AVS address. If a record exists, it updates the rewards, as well as
-// the derived fields (claimed_rewards, total_rewards), and sets the reward_update_time to the
-// current timestamp. If the record does not exist, it inserts a new row.
-func (db *Db) UpsertStakerRewards(
-	stakerID string,
-	avsAddr string,
-	outstandingRewards sdk.DecCoins,
-	withdrawnRewards sdk.DecCoins,
-	unclaimedRewards sdk.DecCoins,
-	height int64,
-) error {
-	if outstandingRewards == nil {
-		outstandingRewards = sdk.NewDecCoins()
-	}
-	if withdrawnRewards == nil {
-		withdrawnRewards = sdk.NewDecCoins()
-	}
-	if unclaimedRewards == nil {
-		unclaimedRewards = sdk.NewDecCoins()
-	}
-
-	// Compute claimed_rewards = outstanding + withdrawn
-	claimedRewards := outstandingRewards.Add(withdrawnRewards...)
-
-	// Compute total_rewards = claimed + unclaimed
-	totalRewards := claimedRewards.Add(unclaimedRewards...)
-
-	// Current time for reward_update_time
-	rewardUpdateTime := time.Now().UTC()
-
-	upsertStmt := `
-		INSERT INTO staker_rewards (
-			staker_id,
-			avs_addr,
-			outstanding_rewards,
-			withdrawn_rewards,
-			unclaimed_rewards,
-			claimed_rewards,
-			total_rewards,
-		    height,
-			reward_update_time
-		)
-		VALUES (
-			$1, $2,
-			$3, $4, $5,
-			$6, $7, $8, $9,
-		)
-		ON CONFLICT (staker_id, avs_addr)
-		DO UPDATE SET
-			outstanding_rewards = EXCLUDED.outstanding_rewards,
-			withdrawn_rewards = EXCLUDED.withdrawn_rewards,
-			unclaimed_rewards = EXCLUDED.unclaimed_rewards,
-			claimed_rewards = EXCLUDED.claimed_rewards,
-			total_rewards = EXCLUDED.total_rewards,
-		    height = EXCLUDED.heigth,
-			reward_update_time = EXCLUDED.reward_update_time
-	`
-	_, err := db.SQL.Exec(upsertStmt,
-		stakerID,
-		avsAddr,
-		pq.Array(dbtypes.NewDbDecCoins(outstandingRewards)),
-		pq.Array(dbtypes.NewDbDecCoins(withdrawnRewards)),
-		pq.Array(dbtypes.NewDbDecCoins(unclaimedRewards)),
-		pq.Array(dbtypes.NewDbDecCoins(claimedRewards)),
-		pq.Array(dbtypes.NewDbDecCoins(totalRewards)),
-		height,
-		rewardUpdateTime,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to upsert staker_rewards: %w", err)
-	}
-
-	return nil
-}
-
-func (db *Db) GetStakerRewards(stakerID, avsAddr string) (*types.StakerRewards, error) {
-	query := `
-		SELECT 
-			staker_id,
-			avs_addr,
-			outstanding_rewards,
-			withdrawn_rewards,
-			unclaimed_rewards,
-			claimed_rewards,
-			total_rewards,
-			reward_update_time
-		FROM staker_rewards
-		WHERE staker_id = $1 AND avs_addr = $2
-		LIMIT 1
-	`
-
-	row := db.SQL.QueryRow(query, stakerID, avsAddr)
-	var (
-		outstandingRewards dbtypes.DbDecCoins
-		withdrawnRewards   dbtypes.DbDecCoins
-		unclaimedRewards   dbtypes.DbDecCoins
-		claimedRewards     dbtypes.DbDecCoins
-		totalRewards       dbtypes.DbDecCoins
-		rewardUpdateTime   time.Time
-	)
-
-	err := row.Scan(
-		&stakerID,
-		&avsAddr,
-		&outstandingRewards,
-		&withdrawnRewards,
-		&unclaimedRewards,
-		&claimedRewards,
-		&totalRewards,
-		&rewardUpdateTime,
-	)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil // not found
-		}
-		return nil, fmt.Errorf("failed to query staker_rewards: %w", err)
-	}
-
-	return &types.StakerRewards{
-		StakerID: stakerID,
-		AVSAddr:  avsAddr,
-		StakerClaimedRewards: distrtypes.StakerClaimedRewards{
-			OutstandingRewards: outstandingRewards.ToDecCoins(),
-			WithdrawnRewards:   withdrawnRewards.ToDecCoins(),
-		},
-		UnclaimedRewards: unclaimedRewards.ToDecCoins(),
-		ClaimedRewards:   claimedRewards.ToDecCoins(),
-		TotalRewards:     totalRewards.ToDecCoins(),
-		RewardUpdateTime: rewardUpdateTime,
-	}, nil
-}
-
-func (db *Db) UpdateStakerRewardsDelta(
-	stakerID string,
-	avsAddr string,
-	outstandingRewards sdk.DecCoins,
-	withdrawnRewardsDelta sdk.DecCoins,
-	unclaimedRewards sdk.DecCoins,
-) error {
-	originalStakerRewards, err := db.GetStakerRewards(stakerID, avsAddr)
-	if err != nil {
-		return err
-	}
-	newWithdrawnRewards := originalStakerRewards.WithdrawnRewards.Add(withdrawnRewardsDelta...)
-	return db.UpsertStakerRewards(stakerID, avsAddr, outstandingRewards, newWithdrawnRewards, unclaimedRewards, height)
-}
-
-func (db *Db) SaveDistributionIndexerParams(params *dbtypes.DistributionIndexerParams) error {
-	stmt := `
-INSERT INTO distribution_indexer_params (
-    one_row_id,
-    staker_rewards_update_interval,
-    community_pool_update_interval,
-    update_time
-) 
-VALUES (
-    TRUE,
-    COALESCE($1, DEFAULT),
-    COALESCE($2, DEFAULT),
-    NOW()
-)
-ON CONFLICT (one_row_id) DO UPDATE
-SET
-    staker_rewards_update_interval = COALESCE(EXCLUDED.staker_rewards_update_interval, distribution_indexer_params.staker_rewards_update_interval),
-    community_pool_update_interval = COALESCE(EXCLUDED.community_pool_update_interval, distribution_indexer_params.community_pool_update_interval),
-    update_time = NOW()`
-	_, err := db.SQL.Exec(stmt,
-		params.StakerRewardsUpdateInterval,
-		params.CommunityPoolUpdateInterval,
-	)
-	if err != nil {
-		return fmt.Errorf("error while saving distribution indexer params: %w", err)
-	}
-
-	return nil
-}
-
-func (db *Db) UpdateLastStakerRewardsUpdateTime(ts *time.Time) error {
-	stmt := `
-UPDATE distribution_indexer_params
-SET last_staker_rewards_update_time = $1
-WHERE one_row_id = TRUE`
-
-	_, err := db.SQL.Exec(stmt, ts)
-	if err != nil {
-		return fmt.Errorf("error while updating last_staker_rewards_update_time: %w", err)
-	}
-
-	return nil
-}
-
-func (db *Db) GetDistributionIndexerParams() (*dbtypes.DistributionIndexerParams, error) {
-	stmt := `
-SELECT
-    staker_rewards_update_interval,
-    community_pool_update_interval,
-    update_time,
-    last_staker_rewards_update_time
-FROM distribution_indexer_params
-WHERE one_row_id = TRUE
-LIMIT 1;`
-
-	var params dbtypes.DistributionIndexerParams
-
-	err := db.SQL.QueryRow(stmt).Scan(
-		&params.StakerRewardsUpdateInterval,
-		&params.CommunityPoolUpdateInterval,
-		&params.UpdateTime,
-		&params.LastStakerRewardUpdateTime,
-	)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("distribution indexer parameters not found")
-		}
-		return nil, fmt.Errorf("failed to query distribution indexer parameters: %w", err)
-	}
-
-	return &params, nil
 }

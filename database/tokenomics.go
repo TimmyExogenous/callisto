@@ -192,7 +192,7 @@ WHERE staker_id = $1 AND airdrop_round = $2;`
 
 func (db *Db) UpdateGenesisAirdropRewardsByRound(
 	round int,
-	calcReward func(usdValue sdkmath.LegacyDec) (sdkmath.Int, error),
+	calcReward func(usdValue sdkmath.LegacyDec) (sdkmath.LegacyDec, error),
 ) error {
 	stmtSelect := `
     SELECT staker_id, usd_value
@@ -218,7 +218,7 @@ func (db *Db) UpdateGenesisAirdropRewardsByRound(
 		if err != nil {
 			return fmt.Errorf("invalid staker USD value: %w, usdValue:%s", err, usdValue)
 		}
-		newReward, err := calcReward(usdValueDec)
+		airdropReward, err := calcReward(usdValueDec)
 		if err != nil {
 			return fmt.Errorf("failed to calculate reward for staker %s: %w", stakerID, err)
 		}
@@ -228,7 +228,7 @@ func (db *Db) UpdateGenesisAirdropRewardsByRound(
         SET reward_amount = $1
         WHERE staker_id = $2 AND airdrop_round = $3;
         `
-		_, err = db.SQL.Exec(stmtUpdate, newReward.String(), stakerID, round)
+		_, err = db.SQL.Exec(stmtUpdate, airdropReward.String(), stakerID, round)
 		if err != nil {
 			return fmt.Errorf("failed to update reward for staker %s: %w", stakerID, err)
 		}
@@ -313,4 +313,140 @@ LIMIT 1;`
 	}
 	round.AirdropType = types.LiquidityIncentivesAirdrop
 	return &round, nil
+}
+
+func (db *Db) SaveLiquidityStakerAirdrop(airdrop *types.LiquidityStakerAirdrop) error {
+	stmt := `
+INSERT INTO liquidity_incentives_staker_airdrops (
+    staker_id,
+    airdrop_round,
+    outstanding_rewards,
+    withdrawn_rewards,
+    claimed_rewards,
+    unclaimed_rewards,
+    total_rewards,
+	round_native_rewards,   
+    airdrop_reward_amount,
+    is_distributed,
+    distributed_at,
+    created_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+ON CONFLICT (staker_id, airdrop_round) DO NOTHING;`
+
+	_, err := db.SQL.Exec(stmt,
+		airdrop.StakerID,
+		airdrop.AirdropRound,
+		airdrop.OutstandingRewards,
+		airdrop.WithdrawnRewards,
+		airdrop.ClaimedRewards,
+		airdrop.UnclaimedRewards,
+		airdrop.TotalRewards,
+		airdrop.RoundNativeRewards,
+		airdrop.AirdropRewardAmount,
+		airdrop.IsDistributed,
+		airdrop.DistributedAt,
+		airdrop.CreatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save liquidity incentives staker airdrop (%s, round %d): %w",
+			airdrop.StakerID, airdrop.AirdropRound, err)
+	}
+	return nil
+}
+
+func (db *Db) GetLiquidityStakerAirdrop(stakerID string, airdropRound int) (*types.LiquidityStakerAirdrop, error) {
+	stmt := `
+SELECT 
+	staker_id,
+	airdrop_round,
+	outstanding_rewards,
+	withdrawn_rewards,
+	claimed_rewards,
+	unclaimed_rewards,
+	total_rewards,
+	round_native_rewards,
+	airdrop_reward_amount,
+	is_distributed,
+	distributed_at,
+	created_at
+FROM liquidity_incentives_staker_airdrops
+WHERE staker_id = $1 AND airdrop_round = $2;
+`
+	row := db.SQL.QueryRow(stmt, stakerID, airdropRound)
+
+	var airdrop types.LiquidityStakerAirdrop
+	err := row.Scan(
+		&airdrop.StakerID,
+		&airdrop.AirdropRound,
+		&airdrop.OutstandingRewards,
+		&airdrop.WithdrawnRewards,
+		&airdrop.ClaimedRewards,
+		&airdrop.UnclaimedRewards,
+		&airdrop.TotalRewards,
+		&airdrop.RoundNativeRewards,
+		&airdrop.AirdropRewardAmount,
+		&airdrop.IsDistributed,
+		&airdrop.DistributedAt,
+		&airdrop.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get liquidity incentives staker airdrop (%s, round %d): %w",
+			stakerID, airdropRound, err)
+	}
+
+	return &airdrop, nil
+}
+
+func (db *Db) UpdateLiquidityAirdropRewardsByRound(
+	round int,
+	calcReward func(roundNativeRewards sdkmath.LegacyDec) (sdkmath.LegacyDec, error),
+) error {
+	stmtSelect := `
+    SELECT staker_id, round_native_rewards
+    FROM liquidity_incentives_staker_airdrops
+    WHERE airdrop_round = $1;
+    `
+	rows, err := db.SQL.Query(stmtSelect, round)
+	if err != nil {
+		return fmt.Errorf("failed to query liquidity airdrops for round %d: %w", round, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var stakerID string
+		var roundNativeRewards string
+
+		err := rows.Scan(&stakerID, &roundNativeRewards)
+		if err != nil {
+			return fmt.Errorf("failed to scan airdrop row: %w", err)
+		}
+
+		roundNativeRewardsDec, err := sdkmath.LegacyNewDecFromStr(roundNativeRewards)
+		if err != nil {
+			return fmt.Errorf("invalid staker round native rewards value: %w, roundNativeRewards:%s", err, roundNativeRewards)
+		}
+		airdropReward, err := calcReward(roundNativeRewardsDec)
+		if err != nil {
+			return fmt.Errorf("failed to calculate liquidity reward for staker %s: %w", stakerID, err)
+		}
+
+		stmtUpdate := `
+        UPDATE liquidity_incentives_staker_airdrops
+        SET airdrop_reward_amount = $1
+        WHERE staker_id = $2 AND airdrop_round = $3;
+        `
+		_, err = db.SQL.Exec(stmtUpdate, airdropReward.String(), stakerID, round)
+		if err != nil {
+			return fmt.Errorf("failed to update liquidity reward for staker %s: %w", stakerID, err)
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("row iteration error: %w", err)
+	}
+
+	return nil
 }

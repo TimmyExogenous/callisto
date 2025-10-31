@@ -57,23 +57,26 @@ func (s Source) Params(height int64) (distrtypes.Params, error) {
 	return res.Params, nil
 }
 
-func (s Source) StakerAllClaimedRewards(height int64, stakerID string) ([]distrtypes.StakerClaimedRewardsPerAVS, error) {
+func (s Source) StakerAVSClaimedRewards(height int64, stakerID, avs string) (*distrtypes.StakerClaimedRewards, error) {
 	ctx, err := s.LoadHeight(height)
 	if err != nil {
 		return nil, fmt.Errorf("error while loading height: %s", err)
 	}
-	res, err := s.q.StakerAllClaimedRewards(
+	res, err := s.q.StakerClaimedRewards(
 		sdk.WrapSDKContext(ctx),
-		&distrtypes.QueryStakerAllClaimedRewardsRequest{StakerId: stakerID},
+		&distrtypes.QueryStakerClaimedRewardsRequest{
+			StakerId: stakerID,
+			Avs:      avs,
+		},
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	return res.Rewards, nil
+	return res.StakerClaimedRewards, nil
 }
 
-func (s Source) StakerUnclaimedRewards(height int64, stakerID string) (distrtypes.CommonAVSRewards, error) {
+func (s Source) StakerAVSUnclaimedRewards(height int64, stakerID, avs string) (sdk.DecCoins, error) {
 	ctx, err := s.LoadHeight(height)
 	if err != nil {
 		return nil, fmt.Errorf("error while loading height: %s", err)
@@ -86,5 +89,5 @@ func (s Source) StakerUnclaimedRewards(height int64, stakerID string) (distrtype
 		return nil, err
 	}
 
-	return res.Rewards, nil
+	return distrtypes.CommonAVSRewards(res.Rewards).RewardsOf(avs), nil
 }

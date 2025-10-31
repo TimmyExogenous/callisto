@@ -2,6 +2,7 @@ package types
 
 import (
 	"fmt"
+	"github.com/imua-xyz/imuachain/x/feedistribution/types"
 	"os"
 
 	simappparams "cosmossdk.io/simapp/params"
@@ -55,6 +56,10 @@ import (
 	localoraclesource "github.com/forbole/callisto/v4/modules/oracle/source/local"
 	remoteoraclesource "github.com/forbole/callisto/v4/modules/oracle/source/remote"
 
+	distributionsource "github.com/forbole/callisto/v4/modules/distribution/source"
+	localdistributionsource "github.com/forbole/callisto/v4/modules/distribution/source/local"
+	remotedistributionsource "github.com/forbole/callisto/v4/modules/distribution/source/remote"
+
 	imuachainapp "github.com/imua-xyz/imuachain/app"
 )
 
@@ -65,12 +70,13 @@ type Sources struct {
 	// MintSource     mintsource.Source
 	SlashingSource slashingsource.Source
 	// StakingSource  stakingsource.Source
-	EpochsSource     epochssource.Source
-	ImmintSource     immintsource.Source
-	AssetsSource     assetssource.Source
-	DelegationSource delegationsource.Source
-	DogfoodSource    dogfoodsource.Source
-	OracleSource     oraclesource.Source
+	EpochsSource       epochssource.Source
+	ImmintSource       immintsource.Source
+	AssetsSource       assetssource.Source
+	DelegationSource   delegationsource.Source
+	DogfoodSource      dogfoodsource.Source
+	OracleSource       oraclesource.Source
+	DistributionSource distributionsource.Source
 }
 
 func BuildSources(nodeCfg nodeconfig.Config, encodingConfig params.EncodingConfig) (*Sources, error) {
@@ -105,10 +111,11 @@ func buildLocalSources(cfg *local.Details, encodingConfig params.EncodingConfig)
 		EpochsSource:   localepochssource.NewSource(source, epochstypes.QueryServer(app.EpochsKeeper)),
 		ImmintSource:   localimmintsource.NewSource(source, imminttypes.QueryServer(app.ImmintKeeper)),
 		// StakingSource:  localstakingsource.NewSource(source, stakingkeeper.Querier{Keeper: app.StakingKeeper}),
-		AssetsSource:     localassetssource.NewSource(source, assetstypes.QueryServer(app.AssetsKeeper)),
-		DelegationSource: localdelegationsource.NewSource(source, delegationtypes.QueryServer(&app.DelegationKeeper)),
-		DogfoodSource:    localdogfoodsource.NewSource(source, dogfoodkeeper.NewQueryServer(app.StakingKeeper)),
-		OracleSource:     localoraclesource.NewSource(source, oracletypes.QueryServer(app.OracleKeeper)),
+		AssetsSource:       localassetssource.NewSource(source, assetstypes.QueryServer(app.AssetsKeeper)),
+		DelegationSource:   localdelegationsource.NewSource(source, delegationtypes.QueryServer(&app.DelegationKeeper)),
+		DogfoodSource:      localdogfoodsource.NewSource(source, dogfoodkeeper.NewQueryServer(app.StakingKeeper)),
+		OracleSource:       localoraclesource.NewSource(source, oracletypes.QueryServer(app.OracleKeeper)),
+		DistributionSource: localdistributionsource.NewSource(source, types.QueryServer(app.DistrKeeper)),
 	}
 
 	// Mount and initialize the stores
@@ -148,11 +155,12 @@ func buildRemoteSources(cfg *remote.Details) (*Sources, error) {
 		// MintSource:     remotemintsource.NewSource(source, minttypes.NewQueryClient(source.GrpcConn)),
 		SlashingSource: remoteslashingsource.NewSource(source, slashingtypes.NewQueryClient(source.GrpcConn)),
 		// StakingSource:  remotestakingsource.NewSource(source, stakingtypes.NewQueryClient(source.GrpcConn)),
-		EpochsSource:     remoteepochssource.NewSource(source, epochstypes.NewQueryClient(source.GrpcConn)),
-		ImmintSource:     remoteimmintsource.NewSource(source, imminttypes.NewQueryClient(source.GrpcConn)),
-		AssetsSource:     remoteassetssource.NewSource(source, assetstypes.NewQueryClient(source.GrpcConn)),
-		DelegationSource: remotedelegationsource.NewSource(source, delegationtypes.NewQueryClient(source.GrpcConn)),
-		DogfoodSource:    remotedogfoodsource.NewSource(source, dogfoodtypes.NewQueryClient(source.GrpcConn)),
-		OracleSource:     remoteoraclesource.NewSource(source, oracletypes.NewQueryClient(source.GrpcConn)),
+		EpochsSource:       remoteepochssource.NewSource(source, epochstypes.NewQueryClient(source.GrpcConn)),
+		ImmintSource:       remoteimmintsource.NewSource(source, imminttypes.NewQueryClient(source.GrpcConn)),
+		AssetsSource:       remoteassetssource.NewSource(source, assetstypes.NewQueryClient(source.GrpcConn)),
+		DelegationSource:   remotedelegationsource.NewSource(source, delegationtypes.NewQueryClient(source.GrpcConn)),
+		DogfoodSource:      remotedogfoodsource.NewSource(source, dogfoodtypes.NewQueryClient(source.GrpcConn)),
+		OracleSource:       remoteoraclesource.NewSource(source, oracletypes.NewQueryClient(source.GrpcConn)),
+		DistributionSource: remotedistributionsource.NewSource(source, types.NewQueryClient(source.GrpcConn)),
 	}, nil
 }

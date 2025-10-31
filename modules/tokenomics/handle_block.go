@@ -4,7 +4,8 @@ import (
 	sdkmath "cosmossdk.io/math"
 	"fmt"
 	"github.com/forbole/callisto/v4/types"
-	operatorkeeper "github.com/imua-xyz/imuachain/x/operator/keeper"
+	"github.com/imua-xyz/imuachain/utils"
+	assetstypes "github.com/imua-xyz/imuachain/x/assets/types"
 	oracletypes "github.com/imua-xyz/imuachain/x/oracle/types"
 	"time"
 
@@ -20,10 +21,18 @@ func (m *Module) HandleBlock(
 	log.Debug().Str("module", m.Name()).Int64("height", block.Block.Height).
 		Msg(fmt.Sprintf("updating %s", m.Name()))
 
-	return m.HandleGenesisPoolAirdropRound(block)
+	err := m.HandleGenesisPoolAirdropRound(block)
+	if err != nil {
+		return err
+	}
+	err = m.HandleLiquidityIncentivesAirdropRound(block)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-func (m *Module) HandleGenesisPoolAirdropForStakers(roundReward sdkmath.Int, round *types.CommonAirdropRound) error {
+func (m *Module) HandleGenesisPoolAirdropForStakers(roundReward sdkmath.LegacyDec, round *types.CommonAirdropRound) error {
 	var stakerAirdrop types.GenesisStakerAirdrop
 	totalUSDValue := sdkmath.LegacyZeroDec()
 	stakerUSDValue := sdkmath.LegacyZeroDec()
@@ -78,7 +87,7 @@ func (m *Module) HandleGenesisPoolAirdropForStakers(roundReward sdkmath.Int, rou
 		}
 		// calculate the USD value for the stakerID and assetID
 		validAssetAmount := sdkmath.MinInt(sa.GenesisDeposited, sa.Deposited)
-		assetUSDValue := operatorkeeper.CalculateUSDValue(validAssetAmount, price.Value, uint32(assetDecimal), price.Decimal)
+		assetUSDValue := utils.CalculateUSDValue(validAssetAmount, price.Value, uint32(assetDecimal), price.Decimal)
 		stakerUSDValue.AddMut(assetUSDValue)
 
 		return nil
@@ -92,8 +101,8 @@ func (m *Module) HandleGenesisPoolAirdropForStakers(roundReward sdkmath.Int, rou
 	round.TotalStakers = totalStakers
 
 	// iterate over all stakers' airdrop info to calculate and update the rewards.
-	err = m.db.UpdateGenesisAirdropRewardsByRound(round.AirdropRound, func(usdValue sdkmath.LegacyDec) (sdkmath.Int, error) {
-		return usdValue.MulInt(roundReward).Quo(totalUSDValue).TruncateInt(), nil
+	err = m.db.UpdateGenesisAirdropRewardsByRound(round.AirdropRound, func(usdValue sdkmath.LegacyDec) (sdkmath.LegacyDec, error) {
+		return usdValue.Mul(roundReward).Quo(totalUSDValue), nil
 	})
 	if err != nil {
 		return fmt.Errorf("HandleGenesisPoolAirdropForStakers: error updating airdrop reward for all genesis stakers: %w", err)
@@ -184,6 +193,7 @@ func (m *Module) HandleGenesisPoolAirdropRound(block *tmctypes.ResultBlock) erro
 	}
 
 	round := &types.CommonAirdropRound{
+		AirdropType:   types.GenesisPoolAirdrop,
 		AirdropRound:  generalRoundInfo.RoundID,
 		BlockHeight:   block.Block.Height,
 		RoundDuration: generalRoundInfo.RoundDur,
@@ -192,7 +202,7 @@ func (m *Module) HandleGenesisPoolAirdropRound(block *tmctypes.ResultBlock) erro
 	// calculate the total reward amount for this round
 	genesisSupplyInt := sdkmath.NewInt(m.cfg.GenesisSupply)
 
-	roundReward := m.cfg.GenesisPoolRatio.MulInt(genesisSupplyInt).MulInt64(generalRoundInfo.RoundDur).QuoInt64(generalRoundInfo.AirdropDur).TruncateInt()
+	roundReward := m.cfg.GenesisPoolRatio.MulInt(genesisSupplyInt).MulInt64(generalRoundInfo.RoundDur).QuoInt64(generalRoundInfo.AirdropDur)
 	round.TotalRewardAmount = roundReward.String()
 
 	// calculate and address the airdrop for all genesis stakers.
@@ -223,6 +233,7 @@ func (m *Module) HandleLiquidityIncentivesAirdropRound(block *tmctypes.ResultBlo
 	}
 
 	round := &types.CommonAirdropRound{
+		AirdropType:   types.LiquidityIncentivesAirdrop,
 		AirdropRound:  generalRoundInfo.RoundID,
 		BlockHeight:   block.Block.Height,
 		RoundDuration: generalRoundInfo.RoundDur,
@@ -237,5 +248,111 @@ func (m *Module) HandleLiquidityIncentivesAirdropRound(block *tmctypes.ResultBlo
 		rewardRatioIndex = int(generalRoundInfo.PreRound.CreatedAt.Sub(generalRoundInfo.GenesisTime) / oneYear)
 	}
 	rewardRatiosLength := len(m.cfg.LiquidityIncentiveRatios)
-	rewardRatio := sdkmath.LegacyZeroDec()
+	var rewardRatio sdkmath.LegacyDec
+	if rewardRatioIndex < rewardRatiosLength {
+		rewardRatio = m.cfg.LiquidityIncentiveRatios[rewardRatioIndex]
+	} else {
+		rewardRatio = m.cfg.LiquidityIncentiveRatios[rewardRatiosLength-1]
+	}
+	if rewardRatio.IsZero() {
+		// do nothing when the reward ratio is zero.
+		log.Info().Msg("the reward ratio is zero")
+		return nil
+	}
+	roundReward := rewardRatio.MulInt(genesisSupplyInt).Mul(m.cfg.LiquidityIncentiveAirdropInterval)
+	round.TotalRewardAmount = roundReward.String()
+
+	// calculate and address the airdrop for all stakers.
+	err = m.HandleLiquidityIncentiveAirdropForStakers(roundReward, round, generalRoundInfo.PreRound)
+	if err != nil {
+		return fmt.Errorf("error addressing genesis pool airdrop for all stakers: %w", err)
+	}
+	err = m.db.SaveLiquidityAirdropRound(round)
+	if err != nil {
+		return fmt.Errorf("error saving liquidity incentive airdrop round: %w", err)
+	}
+	return nil
+}
+
+func (m *Module) HandleLiquidityIncentiveAirdropForStakers(roundReward sdkmath.LegacyDec, round, preRound *types.CommonAirdropRound) error {
+	// update the rewards for all stakers
+	// get all stakers
+	stakers, err := m.db.GetAllStakersFromDelegationStates()
+	if err != nil {
+		return err
+	}
+	totalRoundNativeRewards := sdkmath.LegacyZeroDec()
+	totalStakers := 0
+	// Iterate over all stakers to calculate their total rewards for the current round,
+	// and save the rewards snapshot to the database.
+	// The snapshot is created by fetching reward states from the RPC, and is later used
+	// to calculate the liquidity incentive airdrop amount.
+	//
+	// TODO: Consider potential performance issues—processing all stakers
+	// may put pressure on both the indexer and the source full node.
+	// This affects only the indexer itself and the node it fetches data from.
+	for _, stakerID := range stakers {
+		// get claimed dogfood rewards
+		claimedRewards, err := m.source.StakerAVSClaimedRewards(round.BlockHeight, stakerID, m.dogfoodAddr)
+		if err != nil {
+			return fmt.Errorf("failed to get claimed dogfood rewards for staker:%s, err:%w", stakerID, err)
+		}
+		// get unclaimed dogfood rewards
+		unclaimedRewards, err := m.source.StakerAVSUnclaimedRewards(round.BlockHeight, stakerID, m.dogfoodAddr)
+		if err != nil {
+			return fmt.Errorf("failed to get unclaimed dogfood rewards for staker:%s,err:%w", stakerID, err)
+		}
+
+		outstandingReward := claimedRewards.OutstandingRewards.AmountOf(assetstypes.ImuachainAssetDenom)
+		withdrawnReward := claimedRewards.WithdrawnRewards.AmountOf(assetstypes.ImuachainAssetDenom)
+		totalClaimedReward := outstandingReward.Add(withdrawnReward)
+		unclaimedReward := unclaimedRewards.AmountOf(assetstypes.ImuachainAssetDenom)
+		totalReward := totalClaimedReward.Add(unclaimedReward)
+		roundNativeRewards := totalReward
+		if preRound != nil {
+			preStakerAirdrop, err := m.db.GetLiquidityStakerAirdrop(stakerID, preRound.AirdropRound)
+			if err != nil {
+				return fmt.Errorf("failed to get the staker liquidity airdrop of previous round,err:%s", err)
+			}
+			if preStakerAirdrop != nil {
+				roundNativeRewards = totalReward.Sub(sdkmath.LegacyMustNewDecFromStr(preStakerAirdrop.TotalRewards))
+			}
+		}
+		if roundNativeRewards.IsNegative() {
+			return fmt.Errorf("negative round native rewards for staker:%s,round:%d,reward:%s", stakerID, round.AirdropRound, roundNativeRewards)
+		}
+
+		// save reward snapshot
+		err = m.db.SaveLiquidityStakerAirdrop(&types.LiquidityStakerAirdrop{
+			StakerID:            stakerID,
+			AirdropRound:        round.AirdropRound,
+			OutstandingRewards:  outstandingReward.String(),
+			WithdrawnRewards:    withdrawnReward.String(),
+			ClaimedRewards:      totalClaimedReward.String(),
+			UnclaimedRewards:    unclaimedReward.String(),
+			TotalRewards:        totalReward.String(),
+			RoundNativeRewards:  roundNativeRewards.String(),
+			AirdropRewardAmount: sdkmath.LegacyZeroDec().String(),
+			CreatedAt:           time.Now(),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to save liquidity incentive airdrop for staker: %s, round: %d, err: %w", stakerID, round.AirdropRound, err)
+		}
+		if roundNativeRewards.IsPositive() {
+			totalRoundNativeRewards.AddMut(roundNativeRewards)
+			totalStakers++
+		}
+	}
+	// update the total native IMUA rewards and staker number in the input round info.
+	round.TotalNativeIMUARewards = totalRoundNativeRewards.String()
+	round.TotalStakers = totalStakers
+
+	// iterate over all stakers' airdrop info to calculate and update the rewards.
+	err = m.db.UpdateLiquidityAirdropRewardsByRound(round.AirdropRound, func(roundNativeRewards sdkmath.LegacyDec) (sdkmath.LegacyDec, error) {
+		return roundNativeRewards.Mul(roundReward).Quo(totalRoundNativeRewards), nil
+	})
+	if err != nil {
+		return fmt.Errorf("HandleLiquidityIncentiveAirdropForStakers: error updating airdrop reward for all stakers: %w", err)
+	}
+	return nil
 }

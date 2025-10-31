@@ -125,22 +125,3 @@ CREATE TABLE operator_rewards
     CONSTRAINT fk_operator_addr FOREIGN KEY (operator_addr) REFERENCES operators (earnings_addr),
     CONSTRAINT fk_avs_addr FOREIGN KEY (avs_addr) REFERENCES avs (avs_addr)
 );
-
-CREATE TABLE distribution_indexer_params
-(
-    one_row_id                      BOOLEAN   NOT NULL DEFAULT TRUE PRIMARY KEY,
-
-    -- the default update interval for staker rewards is 7 days.
-    staker_rewards_update_interval  NUMERIC   NOT NULL DEFAULT 7,
-
-    -- the default update interval for community is 5 days.
-    community_pool_update_interval  NUMERIC   NOT NULL DEFAULT 5,
-
-    -- the update time of the parameters
-    update_time                     TIMESTAMP NOT NULL,
-
-    -- It's not a parameter; it stores the last update time for staker rewards
-    last_staker_rewards_update_time TIMESTAMP NOT NULL,
-
-    CHECK (one_row_id = TRUE),
-);

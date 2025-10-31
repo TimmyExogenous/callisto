@@ -107,12 +107,18 @@ CREATE TABLE liquidity_incentives_staker_airdrops
     -- amount of total rewards
     -- derived value via addition; only kept for speed (total_rewards = claimed_rewards + unclaimed_rewards)
     -- This reward comes from the native inflation on the IMUA chain — the portion minted and distributed as
-    -- validator rewards. It does not include any airdrop rewards. We use this amount to calculate the airdrop,
-    -- since the airdrop amount is proportional to the rewards earned from this inflation.
+    -- validator rewards. It does not include any airdrop rewards. We use this amount to calculate the airdrop.
+    total_rewards         NUMERIC   NOT NULL,
+
+    -- All five rewards above are native rewards from genesis.
+    -- To calculate the airdrop, we need the native rewards for the current round,
+    -- which can be calculated as:
+    --   round_native_rewards(currentRound) = total_rewards(currentRound) - total_rewards(previousRound)
+    -- since the airdrop amount is proportional to the native rewards earned from the inflation.
     -- airdrop_reward_amount =
     --   liquidity_incentives_airdrop_rounds.total_reward_amount * total_rewards
     --   / liquidity_incentives_airdrop_rounds.total_native_imua_rewards
-    total_rewards         NUMERIC   NOT NULL,
+    round_native_rewards  NUMERIC   NOT NULL,
 
     -- The airdrop reward amount allocated to the staker
     airdrop_reward_amount NUMERIC   NOT NULL,
@@ -125,9 +131,6 @@ CREATE TABLE liquidity_incentives_staker_airdrops
 
     -- Record creation timestamp
     created_at            TIMESTAMP NOT NULL DEFAULT now(),
-
-    -- Snapshot block height
-    block_height          BIGINT    NOT NULL,
 
     -- Composite key ensures uniqueness per staker per airdrop round
     PRIMARY KEY (staker_id, airdrop_round),
