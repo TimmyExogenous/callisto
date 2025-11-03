@@ -2,6 +2,7 @@ package local
 
 import (
 	"fmt"
+
 	distrtypes "github.com/imua-xyz/imuachain/x/feedistribution/types"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -10,9 +11,7 @@ import (
 	distrsource "github.com/forbole/callisto/v4/modules/distribution/source"
 )
 
-var (
-	_ distrsource.Source = &Source{}
-)
+var _ distrsource.Source = &Source{}
 
 // Source implements distrsource.Source reading the data from a local node
 type Source struct {

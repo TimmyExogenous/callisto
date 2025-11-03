@@ -1,13 +1,16 @@
 package tokenomics
 
 import (
-	sdkmath "cosmossdk.io/math"
+	"database/sql"
 	"fmt"
+	"time"
+
+	sdkmath "cosmossdk.io/math"
+
 	"github.com/forbole/callisto/v4/types"
 	"github.com/imua-xyz/imuachain/utils"
 	assetstypes "github.com/imua-xyz/imuachain/x/assets/types"
 	oracletypes "github.com/imua-xyz/imuachain/x/oracle/types"
-	"time"
 
 	tmctypes "github.com/cometbft/cometbft/rpc/core/types"
 	juno "github.com/forbole/juno/v5/types"
@@ -32,7 +35,7 @@ func (m *Module) HandleBlock(
 	return nil
 }
 
-func (m *Module) HandleGenesisPoolAirdropForStakers(roundReward sdkmath.LegacyDec, round *types.CommonAirdropRound) error {
+func (m *Module) HandleGenesisPoolAirdropForStakers(tx *sql.Tx, roundReward sdkmath.LegacyDec, round *types.CommonAirdropRound) error {
 	var stakerAirdrop types.GenesisStakerAirdrop
 	totalUSDValue := sdkmath.LegacyZeroDec()
 	stakerUSDValue := sdkmath.LegacyZeroDec()
@@ -50,7 +53,7 @@ func (m *Module) HandleGenesisPoolAirdropForStakers(roundReward sdkmath.LegacyDe
 			// the airdrop for the previous staker has been fully processed; save it to the database.
 			stakerAirdrop.AirdropRound = round.AirdropRound
 			stakerAirdrop.USDValue = stakerUSDValue.String()
-			err = m.db.SaveGenesisStakerAirdrop(&stakerAirdrop)
+			err = m.db.SaveGenesisStakerAirdrop(tx, &stakerAirdrop)
 			if err != nil {
 				return fmt.Errorf("error saving genesis staker airdrop: %w", err)
 			}
@@ -101,7 +104,7 @@ func (m *Module) HandleGenesisPoolAirdropForStakers(roundReward sdkmath.LegacyDe
 	round.TotalStakers = totalStakers
 
 	// iterate over all stakers' airdrop info to calculate and update the rewards.
-	err = m.db.UpdateGenesisAirdropRewardsByRound(round.AirdropRound, func(usdValue sdkmath.LegacyDec) (sdkmath.LegacyDec, error) {
+	err = m.db.UpdateGenesisAirdropRewardsByRound(tx, round.AirdropRound, func(usdValue sdkmath.LegacyDec) (sdkmath.LegacyDec, error) {
 		return usdValue.Mul(roundReward).Quo(totalUSDValue), nil
 	})
 	if err != nil {
@@ -109,6 +112,7 @@ func (m *Module) HandleGenesisPoolAirdropForStakers(roundReward sdkmath.LegacyDe
 	}
 	return nil
 }
+
 func (m *Module) calculateAirdropRound(block *tmctypes.ResultBlock, airdropType types.AirdropType) (*types.GeneralRoundInfo, error) {
 	oneDay := int64(24 * time.Hour)
 	oneYear := 365 * oneDay
@@ -205,16 +209,29 @@ func (m *Module) HandleGenesisPoolAirdropRound(block *tmctypes.ResultBlock) erro
 	roundReward := m.cfg.GenesisPoolRatio.MulInt(genesisSupplyInt).MulInt64(generalRoundInfo.RoundDur).QuoInt64(generalRoundInfo.AirdropDur)
 	round.TotalRewardAmount = roundReward.String()
 
+	// Since the airdrop calculation depends on the state of the previous round, we must
+	// ensure the atomicity of an airdrop round.
+	tx, err := m.db.SQL.Begin()
+	if err != nil {
+		return fmt.Errorf("error begining db tx: %w", err)
+	}
+	// The rollback will succeed if an error occurs; otherwise, it won’t revert any state changes
+	// because the transaction has already been committed.
+	defer tx.Rollback()
+
 	// calculate and address the airdrop for all genesis stakers.
-	err = m.HandleGenesisPoolAirdropForStakers(roundReward, round)
+	err = m.HandleGenesisPoolAirdropForStakers(tx, roundReward, round)
 	if err != nil {
 		return fmt.Errorf("error addressing genesis pool airdrop for all stakers: %w", err)
 	}
-	err = m.db.SaveGenesisPoolAirdropRound(round)
+	err = m.db.SaveGenesisPoolAirdropRound(tx, round)
 	if err != nil {
 		return fmt.Errorf("error saving genesis pool airdrop round: %w", err)
 	}
-
+	err = tx.Commit()
+	if err != nil {
+		return fmt.Errorf("error committing tx: %w", err)
+	}
 	return nil
 }
 
@@ -262,19 +279,34 @@ func (m *Module) HandleLiquidityIncentivesAirdropRound(block *tmctypes.ResultBlo
 	roundReward := rewardRatio.MulInt(genesisSupplyInt).Mul(m.cfg.LiquidityIncentiveAirdropInterval)
 	round.TotalRewardAmount = roundReward.String()
 
+	// Since the airdrop calculation depends on the state of the previous round, we must
+	// ensure the atomicity of an airdrop round.
+	tx, err := m.db.SQL.Begin()
+	if err != nil {
+		return fmt.Errorf("error begining db tx: %w", err)
+	}
+	// The rollback will succeed if an error occurs; otherwise, it won’t revert any state changes
+	// because the transaction has already been committed.
+	defer tx.Rollback()
+
 	// calculate and address the airdrop for all stakers.
-	err = m.HandleLiquidityIncentiveAirdropForStakers(roundReward, round, generalRoundInfo.PreRound)
+	err = m.HandleLiquidityIncentiveAirdropForStakers(tx, roundReward, round, generalRoundInfo.PreRound)
 	if err != nil {
 		return fmt.Errorf("error addressing genesis pool airdrop for all stakers: %w", err)
 	}
-	err = m.db.SaveLiquidityAirdropRound(round)
+	err = m.db.SaveLiquidityAirdropRound(tx, round)
 	if err != nil {
 		return fmt.Errorf("error saving liquidity incentive airdrop round: %w", err)
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		return fmt.Errorf("error committing tx: %w", err)
 	}
 	return nil
 }
 
-func (m *Module) HandleLiquidityIncentiveAirdropForStakers(roundReward sdkmath.LegacyDec, round, preRound *types.CommonAirdropRound) error {
+func (m *Module) HandleLiquidityIncentiveAirdropForStakers(tx *sql.Tx, roundReward sdkmath.LegacyDec, round, preRound *types.CommonAirdropRound) error {
 	// update the rewards for all stakers
 	// get all stakers
 	stakers, err := m.db.GetAllStakersFromDelegationStates()
@@ -323,7 +355,7 @@ func (m *Module) HandleLiquidityIncentiveAirdropForStakers(roundReward sdkmath.L
 		}
 
 		// save reward snapshot
-		err = m.db.SaveLiquidityStakerAirdrop(&types.LiquidityStakerAirdrop{
+		err = m.db.SaveLiquidityStakerAirdrop(tx, &types.LiquidityStakerAirdrop{
 			StakerID:            stakerID,
 			AirdropRound:        round.AirdropRound,
 			OutstandingRewards:  outstandingReward.String(),
@@ -348,9 +380,10 @@ func (m *Module) HandleLiquidityIncentiveAirdropForStakers(roundReward sdkmath.L
 	round.TotalStakers = totalStakers
 
 	// iterate over all stakers' airdrop info to calculate and update the rewards.
-	err = m.db.UpdateLiquidityAirdropRewardsByRound(round.AirdropRound, func(roundNativeRewards sdkmath.LegacyDec) (sdkmath.LegacyDec, error) {
-		return roundNativeRewards.Mul(roundReward).Quo(totalRoundNativeRewards), nil
-	})
+	err = m.db.UpdateLiquidityAirdropRewardsByRound(tx, round.AirdropRound,
+		func(roundNativeRewards sdkmath.LegacyDec) (sdkmath.LegacyDec, error) {
+			return roundNativeRewards.Mul(roundReward).Quo(totalRoundNativeRewards), nil
+		})
 	if err != nil {
 		return fmt.Errorf("HandleLiquidityIncentiveAirdropForStakers: error updating airdrop reward for all stakers: %w", err)
 	}

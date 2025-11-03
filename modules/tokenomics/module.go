@@ -2,6 +2,7 @@ package tokenomics
 
 import (
 	"fmt"
+
 	"github.com/forbole/callisto/v4/database"
 	distributionsource "github.com/forbole/callisto/v4/modules/distribution/source"
 	"github.com/forbole/callisto/v4/modules/dogfood"

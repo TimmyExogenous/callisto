@@ -1,14 +1,16 @@
 package database
 
 import (
-	sdkmath "cosmossdk.io/math"
 	"database/sql"
 	"errors"
 	"fmt"
+
+	sdkmath "cosmossdk.io/math"
+
 	"github.com/forbole/callisto/v4/types"
 )
 
-func (db *Db) SaveGenesisPoolAirdropRound(round *types.CommonAirdropRound) error {
+func (db *Db) SaveGenesisPoolAirdropRound(tx *sql.Tx, round *types.CommonAirdropRound) error {
 	if round.AirdropType != types.GenesisPoolAirdrop {
 		return fmt.Errorf("invalid airdrop type:%d", round.AirdropType)
 	}
@@ -26,7 +28,11 @@ INSERT INTO genesis_pool_airdrop_rounds (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 ON CONFLICT (airdrop_round) DO NOTHING;`
 
-	_, err := db.SQL.Exec(stmt,
+	execFn := db.SQL.Exec
+	if tx != nil {
+		execFn = tx.Exec
+	}
+	_, err := execFn(stmt,
 		round.AirdropRound,
 		round.BlockHeight,
 		round.TotalStakers,
@@ -141,7 +147,7 @@ WHERE airdrop_round = $1;`
 	return nil
 }
 
-func (db *Db) SaveGenesisStakerAirdrop(airdrop *types.GenesisStakerAirdrop) error {
+func (db *Db) SaveGenesisStakerAirdrop(tx *sql.Tx, airdrop *types.GenesisStakerAirdrop) error {
 	stmt := `
 INSERT INTO genesis_staker_airdrops (
     staker_id,
@@ -153,7 +159,12 @@ INSERT INTO genesis_staker_airdrops (
 ) VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (staker_id, airdrop_round) DO NOTHING;`
 
-	_, err := db.SQL.Exec(stmt,
+	execFn := db.SQL.Exec
+	if tx != nil {
+		execFn = tx.Exec
+	}
+
+	_, err := execFn(stmt,
 		airdrop.StakerID,
 		airdrop.AirdropRound,
 		airdrop.USDValue,
@@ -162,7 +173,8 @@ ON CONFLICT (staker_id, airdrop_round) DO NOTHING;`
 		airdrop.DistributedAt,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to save genesis staker airdrop (%s, round %d): %w", airdrop.StakerID, airdrop.AirdropRound, err)
+		return fmt.Errorf("failed to save genesis staker airdrop (%s, round %d): %w",
+			airdrop.StakerID, airdrop.AirdropRound, err)
 	}
 	return nil
 }
@@ -191,6 +203,7 @@ WHERE staker_id = $1 AND airdrop_round = $2;`
 }
 
 func (db *Db) UpdateGenesisAirdropRewardsByRound(
+	tx *sql.Tx,
 	round int,
 	calcReward func(usdValue sdkmath.LegacyDec) (sdkmath.LegacyDec, error),
 ) error {
@@ -199,7 +212,15 @@ func (db *Db) UpdateGenesisAirdropRewardsByRound(
     FROM genesis_staker_airdrops
     WHERE airdrop_round = $1;
     `
-	rows, err := db.SQL.Query(stmtSelect, round)
+	queryFn := db.SQL.Query
+	if tx != nil {
+		queryFn = tx.Query
+	}
+	execFn := db.SQL.Exec
+	if tx != nil {
+		execFn = tx.Exec
+	}
+	rows, err := queryFn(stmtSelect, round)
 	if err != nil {
 		return fmt.Errorf("failed to query airdrops for round %d: %w", round, err)
 	}
@@ -228,7 +249,7 @@ func (db *Db) UpdateGenesisAirdropRewardsByRound(
         SET reward_amount = $1
         WHERE staker_id = $2 AND airdrop_round = $3;
         `
-		_, err = db.SQL.Exec(stmtUpdate, airdropReward.String(), stakerID, round)
+		_, err = execFn(stmtUpdate, airdropReward.String(), stakerID, round)
 		if err != nil {
 			return fmt.Errorf("failed to update reward for staker %s: %w", stakerID, err)
 		}
@@ -241,7 +262,7 @@ func (db *Db) UpdateGenesisAirdropRewardsByRound(
 	return nil
 }
 
-func (db *Db) SaveLiquidityAirdropRound(round *types.CommonAirdropRound) error {
+func (db *Db) SaveLiquidityAirdropRound(tx *sql.Tx, round *types.CommonAirdropRound) error {
 	if round.AirdropType != types.LiquidityIncentivesAirdrop {
 		return fmt.Errorf("invalid airdrop type:%d", round.AirdropType)
 	}
@@ -259,7 +280,11 @@ INSERT INTO liquidity_incentives_airdrop_rounds (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 ON CONFLICT (airdrop_round) DO NOTHING;`
 
-	_, err := db.SQL.Exec(stmt,
+	execFn := db.SQL.Exec
+	if tx != nil {
+		execFn = tx.Exec
+	}
+	_, err := execFn(stmt,
 		round.AirdropRound,
 		round.BlockHeight,
 		round.TotalStakers,
@@ -315,7 +340,7 @@ LIMIT 1;`
 	return &round, nil
 }
 
-func (db *Db) SaveLiquidityStakerAirdrop(airdrop *types.LiquidityStakerAirdrop) error {
+func (db *Db) SaveLiquidityStakerAirdrop(tx *sql.Tx, airdrop *types.LiquidityStakerAirdrop) error {
 	stmt := `
 INSERT INTO liquidity_incentives_staker_airdrops (
     staker_id,
@@ -333,7 +358,11 @@ INSERT INTO liquidity_incentives_staker_airdrops (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 ON CONFLICT (staker_id, airdrop_round) DO NOTHING;`
 
-	_, err := db.SQL.Exec(stmt,
+	execFn := db.SQL.Exec
+	if tx != nil {
+		execFn = tx.Exec
+	}
+	_, err := execFn(stmt,
 		airdrop.StakerID,
 		airdrop.AirdropRound,
 		airdrop.OutstandingRewards,
@@ -401,6 +430,7 @@ WHERE staker_id = $1 AND airdrop_round = $2;
 }
 
 func (db *Db) UpdateLiquidityAirdropRewardsByRound(
+	tx *sql.Tx,
 	round int,
 	calcReward func(roundNativeRewards sdkmath.LegacyDec) (sdkmath.LegacyDec, error),
 ) error {
@@ -409,7 +439,16 @@ func (db *Db) UpdateLiquidityAirdropRewardsByRound(
     FROM liquidity_incentives_staker_airdrops
     WHERE airdrop_round = $1;
     `
-	rows, err := db.SQL.Query(stmtSelect, round)
+
+	queryFn := db.SQL.Query
+	if tx != nil {
+		queryFn = tx.Query
+	}
+	execFn := db.SQL.Exec
+	if tx != nil {
+		execFn = tx.Exec
+	}
+	rows, err := queryFn(stmtSelect, round)
 	if err != nil {
 		return fmt.Errorf("failed to query liquidity airdrops for round %d: %w", round, err)
 	}
@@ -438,7 +477,7 @@ func (db *Db) UpdateLiquidityAirdropRewardsByRound(
         SET airdrop_reward_amount = $1
         WHERE staker_id = $2 AND airdrop_round = $3;
         `
-		_, err = db.SQL.Exec(stmtUpdate, airdropReward.String(), stakerID, round)
+		_, err = execFn(stmtUpdate, airdropReward.String(), stakerID, round)
 		if err != nil {
 			return fmt.Errorf("failed to update liquidity reward for staker %s: %w", stakerID, err)
 		}

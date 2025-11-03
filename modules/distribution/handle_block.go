@@ -2,6 +2,7 @@ package distribution
 
 import (
 	"fmt"
+
 	abci "github.com/cometbft/cometbft/abci/types"
 	tmctypes "github.com/cometbft/cometbft/rpc/core/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"

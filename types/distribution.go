@@ -1,10 +1,11 @@
 package types
 
 import (
+	"time"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	assetstypes "github.com/imua-xyz/imuachain/x/assets/types"
 	distrtypes "github.com/imua-xyz/imuachain/x/feedistribution/types"
-	"time"
 )
 
 // DistributionParams represents the parameters of the x/distribution module

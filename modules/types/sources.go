@@ -2,8 +2,9 @@ package types
 
 import (
 	"fmt"
-	"github.com/imua-xyz/imuachain/x/feedistribution/types"
 	"os"
+
+	"github.com/imua-xyz/imuachain/x/feedistribution/types"
 
 	simappparams "cosmossdk.io/simapp/params"
 	"github.com/cometbft/cometbft/libs/log"

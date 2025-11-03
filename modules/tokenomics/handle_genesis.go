@@ -2,6 +2,7 @@ package tokenomics
 
 import (
 	"encoding/json"
+
 	tmtypes "github.com/cometbft/cometbft/types"
 	"github.com/rs/zerolog/log"
 )

@@ -1,8 +1,10 @@
 package tokenomics
 
 import (
-	sdkmath "cosmossdk.io/math"
 	"fmt"
+
+	sdkmath "cosmossdk.io/math"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -114,7 +116,8 @@ func DefaultConfig() *Config {
 			sdkmath.LegacyMustNewDecFromStr("0.0100"),
 			sdkmath.LegacyMustNewDecFromStr("0.0050"),
 			sdkmath.LegacyMustNewDecFromStr("0.0025"),
-			sdkmath.LegacyMustNewDecFromStr("0.0013")},
+			sdkmath.LegacyMustNewDecFromStr("0.0013"),
+		},
 		LiquidityIncentiveAirdropDuration: 20,                                      // 20 years
 		LiquidityIncentiveAirdropInterval: sdkmath.LegacyMustNewDecFromStr("0.25"), // every quarter (90 days ≈ 0.25 years)
 	}

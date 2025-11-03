@@ -3,10 +3,11 @@ package types
 import (
 	"database/sql/driver"
 	"fmt"
-	distrtypes "github.com/imua-xyz/imuachain/x/feedistribution/types"
-	"github.com/lib/pq"
 	"strings"
 	"time"
+
+	distrtypes "github.com/imua-xyz/imuachain/x/feedistribution/types"
+	"github.com/lib/pq"
 )
 
 const (

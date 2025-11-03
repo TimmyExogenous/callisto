@@ -35,18 +35,33 @@ dogfood:
   chain_id_without_revision: "imuachaintestnet_233"
 
 tokenomics:
-  genesis_supply: 314159265                    # from tokenomics documentation
-  genesis_pool_ratio: "0.0300"                   # 3% of genesis supply
-  genesis_pool_airdrop_duration: 90            # 90 days after TGE
-  genesis_pool_airdrop_interval: 7             # every 7 days (weekly)
-  liquidity_incentive_ratios: # annual liquidity incentive ratios
+  # default genesis supply value is from the tokenomics documentation
+  genesis_supply: 314159265
+  # default ratio is from the tokenomics documentation
+  genesis_pool_ratio: "0.0300"
+  # The genesis pool airdrop will last for 90 days after TGE.
+  genesis_pool_airdrop_duration: 90
+  # We calculate and execute an airdrop per week (every 7 days).
+  # We can adjust the default value if needed.
+  genesis_pool_airdrop_interval: 7
+  # annual liquidity incentive ratios
+  # default ratios is from the tokenomics documentation
+  # it's similar to the `annual_inflation` in the parameter of immint module.
+  # The rate is selected based on the time since genesis time.
+  # This list stores all annual inflation ratios starting from genesis time.
+  # If the current time exceeds genesis_time + len(list) * 1 year, the last ratio in
+  # the list will be used.
+  liquidity_incentive_ratios:
     - "0.0200"
     - "0.0100"
     - "0.0050"
     - "0.0025"
     - "0.0013"
-  liquidity_incentive_airdrop_duration: 20   # 20 years
-  liquidity_incentive_airdrop_interval: "0.25"   # every quarter (90 days ≈ 0.25 years)
+  # The liquidity incentive airdrop will last for twenty years(ignore the leap year) after TGE.
+  liquidity_incentive_airdrop_duration: 20
+  # We calculate and execute an airdrop each quarter.
+  # We can adjust the default value if needed.
+  liquidity_incentive_airdrop_interval: "0.25"
 
 node:
   type: remote

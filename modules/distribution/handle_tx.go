@@ -1,14 +1,16 @@
 package distribution
 
 import (
-	sdkmath "cosmossdk.io/math"
 	"fmt"
+	"strconv"
+
+	sdkmath "cosmossdk.io/math"
+
 	abci "github.com/cometbft/cometbft/abci/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	juno "github.com/forbole/juno/v5/types"
 	assetstypes "github.com/imua-xyz/imuachain/x/assets/types"
 	distrtypes "github.com/imua-xyz/imuachain/x/feedistribution/types"
-	"strconv"
 
 	"github.com/forbole/callisto/v4/types"
 )
