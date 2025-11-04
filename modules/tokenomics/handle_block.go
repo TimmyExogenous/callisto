@@ -114,18 +114,19 @@ func (m *Module) HandleGenesisPoolAirdropForStakers(tx *sql.Tx, roundReward sdkm
 }
 
 func (m *Module) calculateAirdropRound(block *tmctypes.ResultBlock, airdropType types.AirdropType) (*types.GeneralRoundInfo, error) {
+	oneMinute := int64(time.Minute)
 	oneDay := int64(24 * time.Hour)
 	oneYear := 365 * oneDay
 	var interval, duration int64
 	var latestAirdropRound func() (*types.CommonAirdropRound, error)
 	switch airdropType {
 	case types.GenesisPoolAirdrop:
-		interval = m.cfg.GenesisPoolAirdropInterval * oneDay
-		duration = m.cfg.GenesisPoolAirdropDuration * oneDay
+		interval = m.cfg.GenesisPoolAirdropInterval * oneMinute
+		duration = m.cfg.GenesisPoolAirdropDuration * oneMinute
 		latestAirdropRound = m.db.GetLatestGenesisPoolAirdropRound
 	case types.LiquidityIncentivesAirdrop:
 		interval = m.cfg.LiquidityIncentiveAirdropInterval.MulInt64(oneYear).TruncateInt64()
-		duration = m.cfg.LiquidityIncentiveAirdropDuration * oneYear
+		duration = m.cfg.LiquidityIncentiveAirdropDuration * oneMinute
 		latestAirdropRound = m.db.GetLatestLiquidityIncentivesAirdropRound
 	default:
 		return nil, fmt.Errorf("invalid airdrop type:%d", airdropType)

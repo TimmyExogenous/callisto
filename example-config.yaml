@@ -21,6 +21,7 @@ chain:
     - "dogfood"
     - "oracle"
     - "slashing"
+    - "distribution"
     - "tokenomics"
 
 telemetry:
@@ -40,10 +41,12 @@ tokenomics:
   # default ratio is from the tokenomics documentation
   genesis_pool_ratio: "0.0300"
   # The genesis pool airdrop will last for 90 days after TGE.
-  genesis_pool_airdrop_duration: 90
+  # 129600 = 90*24*60 -> lasts for 90 days.
+  genesis_pool_airdrop_duration: 129600
   # We calculate and execute an airdrop per week (every 7 days).
   # We can adjust the default value if needed.
-  genesis_pool_airdrop_interval: 7
+  # 10080 = 7*24*60 -> every 7 days (weekly).
+  genesis_pool_airdrop_interval: 10080
   # annual liquidity incentive ratios
   # default ratios is from the tokenomics documentation
   # it's similar to the `annual_inflation` in the parameter of immint module.
@@ -58,7 +61,8 @@ tokenomics:
     - "0.0025"
     - "0.0013"
   # The liquidity incentive airdrop will last for twenty years(ignore the leap year) after TGE.
-  liquidity_incentive_airdrop_duration: 20
+  # 10512000 = 20*365*24*60  -> lasts for 20 years
+  liquidity_incentive_airdrop_duration: 10512000
   # We calculate and execute an airdrop each quarter.
   # We can adjust the default value if needed.
   liquidity_incentive_airdrop_interval: "0.25"

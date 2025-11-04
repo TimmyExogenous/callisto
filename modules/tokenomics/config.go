@@ -14,22 +14,26 @@ type Config struct {
 	GenesisSupply int64 `json:"genesis_supply" yaml:"genesis_supply"`
 
 	// ------------------------------------------------------------
-	// Genesis Pool Configuration (measured in days)
+	// Genesis Pool Configuration (measured in minutes)
+	// Although the configuration is typically defined in days, it is measured in minutes here
+	// for finer granularity and easier local testing
 	// ------------------------------------------------------------
 	// GenesisPoolRatio defines the proportion of genesis supply allocated to the genesis pool.
 	// For example: 0.03 means 3% of the genesis supply.
 	GenesisPoolRatio sdkmath.LegacyDec `json:"genesis_pool_ratio" yaml:"genesis_pool_ratio"`
 
-	// GenesisPoolAirdropDuration defines how long (in days) the genesis pool airdrop lasts after TGE.
-	// For example: 90 -> lasts for 90 days.
+	// GenesisPoolAirdropDuration defines how long the genesis pool airdrop lasts after TGE.
+	// For example: 90*24*60 -> lasts for 90 days.
 	GenesisPoolAirdropDuration int64 `json:"genesis_pool_airdrop_duration" yaml:"genesis_pool_airdrop_duration"`
 
-	// GenesisPoolAirdropInterval defines how often (in days) to execute a genesis pool airdrop.
-	// For example: 7 -> every 7 days (weekly).
+	// GenesisPoolAirdropInterval defines how often to execute a genesis pool airdrop.
+	// For example: 7*24*60 -> every 7 days (weekly).
 	GenesisPoolAirdropInterval int64 `json:"genesis_pool_airdrop_interval" yaml:"genesis_pool_airdrop_interval"`
 
 	// ------------------------------------------------------------
-	// Liquidity Incentive Configuration (measured in years)
+	// Liquidity Incentive Configuration (measured in minutes)
+	// Although the configuration is typically defined in years, it is measured in minutes here
+	// for finer granularity and easier local testing
 	// ------------------------------------------------------------
 
 	// LiquidityIncentiveRatios defines the annual ratios of liquidity incentives to be distributed.
@@ -40,9 +44,9 @@ type Config struct {
 	//   Year 3 -> 0.5%
 	LiquidityIncentiveRatios []sdkmath.LegacyDec `json:"liquidity_incentive_ratios" yaml:"liquidity_incentive_ratios"`
 
-	// LiquidityIncentiveAirdropDuration defines how long (in years) the liquidity incentive airdrop lasts.
+	// LiquidityIncentiveAirdropDuration defines how long the liquidity incentive airdrop lasts.
 	// Example:
-	//   20  -> lasts for 20 years
+	// 	20*365*24*60  -> lasts for 20 years
 	LiquidityIncentiveAirdropDuration int64 `json:"liquidity_incentive_airdrop_duration" yaml:"liquidity_incentive_airdrop_duration"`
 
 	// LiquidityIncentiveAirdropInterval defines how often (in years) to execute a liquidity airdrop.
@@ -108,8 +112,8 @@ func DefaultConfig() *Config {
 	return &Config{
 		GenesisSupply:              314159265,                                 // from tokenomics documentation
 		GenesisPoolRatio:           sdkmath.LegacyMustNewDecFromStr("0.0300"), // 3% of genesis supply
-		GenesisPoolAirdropDuration: 90,                                        // 90 days after TGE
-		GenesisPoolAirdropInterval: 7,                                         // every 7 days (weekly)
+		GenesisPoolAirdropDuration: 90 * 24 * 60,                              // 90 days after TGE
+		GenesisPoolAirdropInterval: 7 * 24 * 60,                               // every 7 days (weekly)
 
 		LiquidityIncentiveRatios: []sdkmath.LegacyDec{
 			sdkmath.LegacyMustNewDecFromStr("0.0200"),
@@ -118,7 +122,7 @@ func DefaultConfig() *Config {
 			sdkmath.LegacyMustNewDecFromStr("0.0025"),
 			sdkmath.LegacyMustNewDecFromStr("0.0013"),
 		},
-		LiquidityIncentiveAirdropDuration: 20,                                      // 20 years
+		LiquidityIncentiveAirdropDuration: 20 * 365 * 24 * 60,                      // 20 years
 		LiquidityIncentiveAirdropInterval: sdkmath.LegacyMustNewDecFromStr("0.25"), // every quarter (90 days ≈ 0.25 years)
 	}
 }
