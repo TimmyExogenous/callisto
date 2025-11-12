@@ -14,7 +14,7 @@ func (m *Module) RegisterPeriodicOperations(scheduler *gocron.Scheduler) error {
 	log.Debug().Str("module", "distribution").Msg("setting up periodic tasks")
 
 	// Update the community pool every day, since the dogfood epoch is configured on a daily basis
-	if _, err := scheduler.Every(1).Days().Do(func() {
+	if _, err := scheduler.Every(1).Days().WaitForSchedule().Do(func() {
 		utils.WatchMethod(m.GetLatestCommunityPool)
 	}); err != nil {
 		return fmt.Errorf("error while scheduling distribution periodic operation: %s", err)

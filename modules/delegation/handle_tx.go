@@ -78,7 +78,7 @@ func (m *Module) handleDelegationStateUpdates(events []abci.Event) error {
 		if err != nil {
 			return fmt.Errorf("error while finding asset ID: %s", err)
 		}
-		waitUndelegationAmountDelta, err := juno.FindAttributeByKey(event, delegationtypes.AttributeKeyWaitUndelegationAmountDelta)
+		waitUndelegationAmountDelta, err := juno.FindAttributeByKey(event, delegationtypes.AttributeKeyPendingUndelegationAmountDelta)
 		if err != nil {
 			return fmt.Errorf("error while finding wait undelegation amount: %s", err)
 		}

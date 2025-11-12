@@ -20,6 +20,8 @@ select_permissions:
         - total_reward_amount
         - distributed_stakers
         - round_duration
+        - round_start_at
+        - round_end_at
         - created_at
         - is_completed
       filter: {}

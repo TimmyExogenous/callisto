@@ -2,6 +2,7 @@ package local
 
 import (
 	"fmt"
+	"strings"
 
 	distrtypes "github.com/imua-xyz/imuachain/x/feedistribution/types"
 
@@ -68,10 +69,14 @@ func (s Source) StakerAVSClaimedRewards(height int64, stakerID, avs string) (*di
 			Avs:      avs,
 		},
 	)
-	if err != nil {
-		return nil, err
-	}
 
+	if err != nil {
+		if strings.Contains(err.Error(), distrtypes.ErrNoKeyInTheStore.Error()) {
+			return nil, nil
+		} else {
+			return nil, err
+		}
+	}
 	return res.StakerClaimedRewards, nil
 }
 

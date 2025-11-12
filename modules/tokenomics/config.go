@@ -8,6 +8,33 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type IndexerLegacyDec struct {
+	sdkmath.LegacyDec
+}
+
+func (d *IndexerLegacyDec) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var s string
+	if err := unmarshal(&s); err == nil {
+		dec, err := sdkmath.LegacyNewDecFromStr(s)
+		if err != nil {
+			return err
+		}
+		*d = IndexerLegacyDec{dec}
+		return nil
+	}
+	// Try to unmarshal as a number, fallback if string fails
+	var f float64
+	if err := unmarshal(&f); err == nil {
+		dec, err := sdkmath.LegacyNewDecFromStr(fmt.Sprintf("%.18f", f))
+		if err != nil {
+			return err
+		}
+		*d = IndexerLegacyDec{dec}
+		return nil
+	}
+	return fmt.Errorf("failed to unmarshal IndexerLegacyDec from YAML")
+}
+
 // Config defines all the configurable parameters for the airdrop, incentive, and tokenomics system.
 type Config struct {
 	// GenesisSupply defines the total token supply at genesis (integer, in the smallest unit).
@@ -20,7 +47,7 @@ type Config struct {
 	// ------------------------------------------------------------
 	// GenesisPoolRatio defines the proportion of genesis supply allocated to the genesis pool.
 	// For example: 0.03 means 3% of the genesis supply.
-	GenesisPoolRatio sdkmath.LegacyDec `json:"genesis_pool_ratio" yaml:"genesis_pool_ratio"`
+	GenesisPoolRatio IndexerLegacyDec `json:"genesis_pool_ratio" yaml:"genesis_pool_ratio"`
 
 	// GenesisPoolAirdropDuration defines how long the genesis pool airdrop lasts after TGE.
 	// For example: 90*24*60 -> lasts for 90 days.
@@ -42,7 +69,7 @@ type Config struct {
 	//   Year 1 -> 2%
 	//   Year 2 -> 1%
 	//   Year 3 -> 0.5%
-	LiquidityIncentiveRatios []sdkmath.LegacyDec `json:"liquidity_incentive_ratios" yaml:"liquidity_incentive_ratios"`
+	LiquidityIncentiveRatios []IndexerLegacyDec `json:"liquidity_incentive_ratios" yaml:"liquidity_incentive_ratios"`
 
 	// LiquidityIncentiveAirdropDuration defines how long the liquidity incentive airdrop lasts.
 	// Example:
@@ -57,7 +84,7 @@ type Config struct {
 	//   0.25 -> every quarter
 	//   0.5  -> every half year
 	//   1.0  -> annually
-	LiquidityIncentiveAirdropInterval sdkmath.LegacyDec `json:"liquidity_incentive_airdrop_interval" yaml:"liquidity_incentive_airdrop_interval"`
+	LiquidityIncentiveAirdropInterval IndexerLegacyDec `json:"liquidity_incentive_airdrop_interval" yaml:"liquidity_incentive_airdrop_interval"`
 }
 
 func (c *Config) Validate() error {
@@ -101,7 +128,7 @@ func (c *Config) Validate() error {
 	}
 
 	// The airdrop interval must evenly divide one year to prevent cross-year rounding errors.
-	if !sdkmath.LegacyOneDec().Quo(c.LiquidityIncentiveAirdropInterval).TruncateDec().IsZero() {
+	if !sdkmath.LegacyOneDec().Quo(c.LiquidityIncentiveAirdropInterval.LegacyDec).IsInteger() {
 		return fmt.Errorf("liquidity incentive airdrop interval %s must evenly divide one year", c.LiquidityIncentiveAirdropInterval)
 	}
 	return nil
@@ -110,20 +137,20 @@ func (c *Config) Validate() error {
 // DefaultConfig returns the default configuration
 func DefaultConfig() *Config {
 	return &Config{
-		GenesisSupply:              314159265,                                 // from tokenomics documentation
-		GenesisPoolRatio:           sdkmath.LegacyMustNewDecFromStr("0.0300"), // 3% of genesis supply
-		GenesisPoolAirdropDuration: 90 * 24 * 60,                              // 90 days after TGE
-		GenesisPoolAirdropInterval: 7 * 24 * 60,                               // every 7 days (weekly)
+		GenesisSupply:              314159265,                                                   // from tokenomics documentation
+		GenesisPoolRatio:           IndexerLegacyDec{sdkmath.LegacyMustNewDecFromStr("0.0300")}, // 3% of genesis supply
+		GenesisPoolAirdropDuration: 90 * 24 * 60,                                                // 90 days after TGE
+		GenesisPoolAirdropInterval: 7 * 24 * 60,                                                 // every 7 days (weekly)
 
-		LiquidityIncentiveRatios: []sdkmath.LegacyDec{
-			sdkmath.LegacyMustNewDecFromStr("0.0200"),
-			sdkmath.LegacyMustNewDecFromStr("0.0100"),
-			sdkmath.LegacyMustNewDecFromStr("0.0050"),
-			sdkmath.LegacyMustNewDecFromStr("0.0025"),
-			sdkmath.LegacyMustNewDecFromStr("0.0013"),
+		LiquidityIncentiveRatios: []IndexerLegacyDec{
+			{sdkmath.LegacyMustNewDecFromStr("0.0200")},
+			{sdkmath.LegacyMustNewDecFromStr("0.0100")},
+			{sdkmath.LegacyMustNewDecFromStr("0.0050")},
+			{sdkmath.LegacyMustNewDecFromStr("0.0025")},
+			{sdkmath.LegacyMustNewDecFromStr("0.0013")},
 		},
-		LiquidityIncentiveAirdropDuration: 20 * 365 * 24 * 60,                      // 20 years
-		LiquidityIncentiveAirdropInterval: sdkmath.LegacyMustNewDecFromStr("0.25"), // every quarter (90 days ≈ 0.25 years)
+		LiquidityIncentiveAirdropDuration: 20 * 365 * 24 * 60,                                        // 20 years
+		LiquidityIncentiveAirdropInterval: IndexerLegacyDec{sdkmath.LegacyMustNewDecFromStr("0.25")}, // every quarter (90 days ≈ 0.25 years)
 	}
 }
 

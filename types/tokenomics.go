@@ -13,6 +13,7 @@ type GeneralRoundInfo struct {
 	RoundID         int
 	RoundDur        int64
 	RoundStart      time.Time
+	RoundEnd        time.Time
 	GenesisTime     time.Time
 	PreRound        *CommonAirdropRound
 	AirdropDur      int64
@@ -37,7 +38,9 @@ type CommonAirdropRound struct {
 	TotalUSDValue          string      // Total USD value of all eligible stakers, used for genesis pool airdrop
 	TotalNativeIMUARewards string      // Total native IMUA rewards aggregated across stakers, used for liquidity incentives airdrop
 	TotalRewardAmount      string      // Total reward amount allocated for this round
-	RoundDuration          int64       // Round duration for this round
+	RoundDuration          string      // Round duration(minute) for this round
+	RoundStartAt           time.Time   // Timestamp when this round started
+	RoundEndAt             time.Time   // Timestamp when this round ended
 	CreatedAt              time.Time   // Timestamp when this record was created
 	DistributedStakers     int         // Number of stakers who have received their rewards
 	IsCompleted            bool        // Indicates whether the reward distribution is finished

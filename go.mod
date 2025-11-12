@@ -393,7 +393,8 @@ replace (
 	github.com/cosmos/cosmos-sdk => github.com/imua-xyz/cosmos-sdk v0.47.5-evmos.2.0.20250312095401-0035968c59f0
 	github.com/ethereum/go-ethereum => github.com/evmos/go-ethereum v1.10.26-evmos-rc2
 	github.com/evmos/evmos/v16 => github.com/imua-xyz/evmos/v16 v16.0.3-0.20250428082709-46118f23fed5
-	github.com/imua-xyz/imuachain => ../imuachain
+	// todo: remove this after merging the reward-compounding PR
+	github.com/imua-xyz/imuachain => github.com/TimmyExogenous/imuachain v0.0.0-20251021072531-461b17e296fe
 	github.com/syndtr/goleveldb => github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 	golang.org/x/exp => golang.org/x/exp v0.0.0-20230515195305-f3d0a9c9a5cc
 // github.com/forbole/juno/v5 => /home/user/Documents/Work/Exocore/juno

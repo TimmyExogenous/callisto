@@ -4,6 +4,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/forbole/juno/v5/node/remote"
 	distrtypes "github.com/imua-xyz/imuachain/x/feedistribution/types"
+	"strings"
 
 	distrsource "github.com/forbole/callisto/v4/modules/distribution/source"
 )
@@ -59,7 +60,11 @@ func (s Source) StakerAVSClaimedRewards(height int64, stakerID, avs string) (*di
 		},
 	)
 	if err != nil {
-		return nil, err
+		if strings.Contains(err.Error(), distrtypes.ErrNoKeyInTheStore.Error()) {
+			return nil, nil
+		} else {
+			return nil, err
+		}
 	}
 
 	return res.StakerClaimedRewards, nil

@@ -3,17 +3,17 @@ CREATE TABLE distribution_params
     one_row_id BOOLEAN NOT NULL DEFAULT TRUE PRIMARY KEY,
     params     JSONB   NOT NULL,
     height     BIGINT  NOT NULL,
-    CHECK (one_row_id = TRUE),
+    CHECK (one_row_id = TRUE)
 );
 CREATE INDEX distribution_params_height_index ON distribution_params (height);
 
 CREATE TABLE avs_reward_assets
 (
-    avs_addr                    TEXT    NOT NULL CHECK (address = lower(address)),
+    avs_addr                    TEXT    NOT NULL,
     asset_id                    TEXT    NOT NULL,
     name                        TEXT    NOT NULL,
     symbol                      TEXT    NOT NULL,
-    address                     TEXT    NOT NULL CHECK (address = lower(address)),
+    address                     TEXT    NOT NULL,
     decimals                    INT     NOT NULL,
     layer_zero_chain_id         BIGINT  NOT NULL,
     imuachain_index             BIGINT  NOT NULL,
@@ -44,7 +44,7 @@ CREATE TYPE DEC_COIN AS
 
 CREATE TABLE community_pool
 (
-    avs_addr TEXT PRIMARY KEY NOT NULL CHECK (address = lower(address)),
+    avs_addr TEXT PRIMARY KEY NOT NULL,
     coins    DEC_COIN[] NOT NULL,
     height   BIGINT           NOT NULL,
 
@@ -53,7 +53,7 @@ CREATE TABLE community_pool
 
 CREATE TABLE avs_reward_params
 (
-    avs_addr                TEXT PRIMARY KEY NOT NULL CHECK (address = lower(address)),
+    avs_addr                TEXT PRIMARY KEY NOT NULL,
     custom_reward_inflation BOOLEAN          NOT NULL DEFAULT FALSE,
     custom_operator_ratio   BOOLEAN          NOT NULL DEFAULT FALSE,
     height                  BIGINT           NOT NULL,
@@ -66,14 +66,14 @@ CREATE TABLE avs_reward_params
 CREATE TYPE OPERATOR_REWARD_PROPORTION AS
     (
     operator_addr TEXT, -- Operator address (sdk.AccAddress, case preserved)
-    reward_proportion NUMERIC NOT NULL, -- Reward proportion (cosmos.Dec, stored as NUMERIC)
+    reward_proportion NUMERIC -- Reward proportion (cosmos.Dec, stored as NUMERIC)
     );
 
 -- Table for storing AVS reward distribution for a specific epoch
 CREATE TABLE avs_reward_distribution
 (
     -- Address of the AVS, must be lowercase and unique
-    avs_addr                    TEXT PRIMARY KEY NOT NULL CHECK (avs_addr = lower(avs_addr)),
+    avs_addr                    TEXT PRIMARY KEY NOT NULL,
 
     -- Epoch identifier for the following epoch numbers.
     epoch_identifier            TEXT,
@@ -100,7 +100,7 @@ CREATE TABLE operator_rewards
     operator_addr        TEXT NOT NULL,
 
     -- Address of the AVS, stored in lowercase
-    avs_addr             TEXT NOT NULL CHECK (avs_addr = lower(avs_addr)),
+    avs_addr             TEXT NOT NULL,
 
     -- Array of total AVS rewards (denom + amount)
     total_rewards        DEC_COIN[] NOT NULL,

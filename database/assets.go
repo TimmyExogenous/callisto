@@ -197,11 +197,11 @@ SET deposited = EXCLUDED.deposited,
 	return nil
 }
 
-func (db *Db) IterateGenesisStakerAssets(opFunc func(sa types.ParsedStakerAsset) error) error {
+func (db *Db) IterateAirdropStakerAssets(opFunc func(sa types.ParsedStakerAsset) error) error {
 	stmt := `
 	SELECT staker_id, asset_id, deposited, genesis_deposit
 	FROM staker_assets
-	WHERE genesis_deposit > 0 AND deposited > 0
+	WHERE genesis_deposit > 0 AND deposited >= genesis_deposit
 	ORDER BY staker_id, asset_id;`
 
 	rows, err := db.SQL.Query(stmt)
