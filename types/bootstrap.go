@@ -42,20 +42,22 @@ type OracleFeed struct {
 }
 
 type BootstrapStakerAsset struct {
-	StakerID     string
-	AssetID      string
-	Deposited    string
-	Withdrawable string
-	Delegated    string
-	UpdatedAt    time.Time
+	StakerID       string
+	AssetID        string
+	Deposited      string
+	Withdrawable   string
+	Delegated      string
+	UpdatedAt      time.Time
+	UpdatedAtBlock int64 // Block height when this record was last updated (for optimistic update invalidation)
 }
 
 type BootstrapDelegationState struct {
-	StakerID     string
-	AssetID      string
-	OperatorAddr string
-	Delegated    string
-	UpdatedAt    time.Time
+	StakerID       string
+	AssetID        string
+	OperatorAddr   string
+	Delegated      string
+	UpdatedAt      time.Time
+	UpdatedAtBlock int64 // Block height when this record was last updated (for optimistic update invalidation)
 }
 
 type BootstrapOperatorAsset struct {

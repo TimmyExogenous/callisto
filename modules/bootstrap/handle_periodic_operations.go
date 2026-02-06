@@ -57,7 +57,7 @@ func (m *Module) RegisterPeriodicOperations(scheduler *gocron.Scheduler) error {
 	return nil
 }
 
-func (m *Module) updateStakerAsset(stakerAddr, assetAddr common.Address) (string, string, error) {
+func (m *Module) updateStakerAsset(stakerAddr, assetAddr common.Address, blockHeight int64) (string, string, error) {
 	totalDepositAmount, err := m.bootstrapSession.TotalDepositAmounts(stakerAddr, assetAddr)
 	if err != nil {
 		return "", "", err
@@ -82,12 +82,13 @@ func (m *Module) updateStakerAsset(stakerAddr, assetAddr common.Address) (string
 		return "", "", nil
 	}
 	err = m.database.SaveBootstrapStakerAsset(&types.BootstrapStakerAsset{
-		StakerID:     stakerID,
-		AssetID:      assetID,
-		Deposited:    totalDepositAmount.String(),
-		Withdrawable: withdrawableAmount.String(),
-		Delegated:    delegationAmount.String(),
-		UpdatedAt:    time.Now(),
+		StakerID:       stakerID,
+		AssetID:        assetID,
+		Deposited:      totalDepositAmount.String(),
+		Withdrawable:   withdrawableAmount.String(),
+		Delegated:      delegationAmount.String(),
+		UpdatedAt:      time.Now(),
+		UpdatedAtBlock: blockHeight, // Block height for optimistic update invalidation
 	})
 	if err != nil {
 		return "", "", err
@@ -98,6 +99,13 @@ func (m *Module) updateStakerAsset(stakerAddr, assetAddr common.Address) (string
 func (m *Module) refetchETHStates() error {
 	log.Debug().Str("module", "bootstrap").Str("refetching", "ETH states").
 		Msg("refetching ETH states")
+
+	// Get current block number for optimistic update invalidation
+	currentBlockNumber, err := m.EthHTTPClient.BlockNumber(m.ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get current ETH block number: %w", err)
+	}
+	blockHeight := int64(currentBlockNumber)
 
 	// refetch all validators
 	validatorCount, err := m.bootstrapSession.GetValidatorsCount()
@@ -204,7 +212,7 @@ func (m *Module) refetchETHStates() error {
 			return fmt.Errorf("failed to call Depositors,index:%d,err:%s", i, err)
 		}
 		for _, assetAddr := range stakingAssets {
-			stakerID, assetID, err := m.updateStakerAsset(depositer, assetAddr)
+			stakerID, assetID, err := m.updateStakerAsset(depositer, assetAddr, blockHeight)
 			if err != nil {
 				return fmt.Errorf("failed to call Depositors,index:%d,err:%s", i, err)
 			}
@@ -231,11 +239,12 @@ func (m *Module) refetchETHStates() error {
 					}
 					// update the delegation states
 					err = m.database.SaveBootstrapDelegationState(&types.BootstrapDelegationState{
-						StakerID:     stakerID,
-						AssetID:      assetID,
-						OperatorAddr: validator,
-						Delegated:    delegationAmount.String(),
-						UpdatedAt:    time.Now(),
+						StakerID:       stakerID,
+						AssetID:        assetID,
+						OperatorAddr:   validator,
+						Delegated:      delegationAmount.String(),
+						UpdatedAt:      time.Now(),
+						UpdatedAtBlock: blockHeight, // Block height for optimistic update invalidation
 					})
 					if err != nil {
 						return err
@@ -1237,12 +1246,13 @@ func (m *Module) saveBTCTransaction(dbTx *sql.Tx, tx types.BTCTx) error {
 
 	// Save staker asset
 	stakerAsset := &types.BootstrapStakerAsset{
-		StakerID:     stakerID,
-		AssetID:      VirtualAddress + "_0x1", // BTC asset ID: virtualAddress + chainID
-		Deposited:    strconv.FormatInt(vaultOutput.Value, 10),
-		Withdrawable: "0", // All stakes must be delegated
-		Delegated:    strconv.FormatInt(vaultOutput.Value, 10),
-		UpdatedAt:    time.Now(),
+		StakerID:       stakerID,
+		AssetID:        VirtualAddress + "_0x1", // BTC asset ID: virtualAddress + chainID
+		Deposited:      strconv.FormatInt(vaultOutput.Value, 10),
+		Withdrawable:   "0", // All stakes must be delegated
+		Delegated:      strconv.FormatInt(vaultOutput.Value, 10),
+		UpdatedAt:      time.Now(),
+		UpdatedAtBlock: tx.Status.BlockHeight, // Block height for optimistic update invalidation
 	}
 
 	if err := m.database.SaveBootstrapStakerAssetInTx(dbTx, stakerAsset); err != nil {
@@ -1256,11 +1266,12 @@ func (m *Module) saveBTCTransaction(dbTx *sql.Tx, tx types.BTCTx) error {
 
 	// Save delegation state
 	delegationState := &types.BootstrapDelegationState{
-		StakerID:     stakerID,
-		AssetID:      VirtualAddress + "_0x1",
-		OperatorAddr: tx.ValidatorAddress,
-		Delegated:    strconv.FormatInt(vaultOutput.Value, 10),
-		UpdatedAt:    time.Now(),
+		StakerID:       stakerID,
+		AssetID:        VirtualAddress + "_0x1",
+		OperatorAddr:   tx.ValidatorAddress,
+		Delegated:      strconv.FormatInt(vaultOutput.Value, 10),
+		UpdatedAt:      time.Now(),
+		UpdatedAtBlock: tx.Status.BlockHeight, // Block height for optimistic update invalidation
 	}
 
 	if err := m.database.SaveBootstrapDelegationStateInTx(dbTx, delegationState); err != nil {
@@ -1819,12 +1830,13 @@ func (m *Module) saveXRPTransaction(dbTx *sql.Tx, tx types.XRPTransaction) error
 
 	// Save staker asset
 	stakerAsset := &types.BootstrapStakerAsset{
-		StakerID:     stakerID,
-		AssetID:      VirtualAddress + "_0x2", // XRP asset ID: virtualAddress + chainID
-		Deposited:    amountStr,
-		Withdrawable: "0", // All stakes must be delegated
-		Delegated:    amountStr,
-		UpdatedAt:    time.Now(),
+		StakerID:       stakerID,
+		AssetID:        VirtualAddress + "_0x2", // XRP asset ID: virtualAddress + chainID
+		Deposited:      amountStr,
+		Withdrawable:   "0", // All stakes must be delegated
+		Delegated:      amountStr,
+		UpdatedAt:      time.Now(),
+		UpdatedAtBlock: tx.LedgerIndex, // Ledger index for optimistic update invalidation
 	}
 
 	if err := m.database.SaveBootstrapStakerAssetInTx(dbTx, stakerAsset); err != nil {
@@ -1838,11 +1850,12 @@ func (m *Module) saveXRPTransaction(dbTx *sql.Tx, tx types.XRPTransaction) error
 
 	// Save delegation state
 	delegationState := &types.BootstrapDelegationState{
-		StakerID:     stakerID,
-		AssetID:      VirtualAddress + "_0x2",
-		OperatorAddr: tx.ValidatorAddress,
-		Delegated:    amountStr,
-		UpdatedAt:    time.Now(),
+		StakerID:       stakerID,
+		AssetID:        VirtualAddress + "_0x2",
+		OperatorAddr:   tx.ValidatorAddress,
+		Delegated:      amountStr,
+		UpdatedAt:      time.Now(),
+		UpdatedAtBlock: tx.LedgerIndex, // Ledger index for optimistic update invalidation
 	}
 
 	if err := m.database.SaveBootstrapDelegationStateInTx(dbTx, delegationState); err != nil {
@@ -2025,27 +2038,67 @@ func (m *Module) updatePricesAndTVL() error {
 			if err != nil {
 				log.Err(err).Str("module", "bootstrap").Str("assetID", t.AssetID).Str("name", t.Name).Str("symbol", t.Symbol).
 					Msg("failed to get the asset price from coinbase")
-				totalTVL.AddMut(sdkmath.LegacyMustNewDecFromStr(t.TotalUSDValue))
-			} else {
-				// update the price
-				err = m.database.SaveBootstrapTokenPrice(t.AssetID, price)
-				if err != nil {
-					return err
+				// Fall back to existing stored USD value (if any)
+				if t.TotalUSDValue != "" {
+					totalTVL.AddMut(sdkmath.LegacyMustNewDecFromStr(t.TotalUSDValue))
 				}
-				// calculate the total USD value of this asset
-				priceDec, err := sdkmath.LegacyNewDecFromStr(price)
-				if err != nil {
-					log.Err(err).Str("binancePrice", price).Msg("failed to parse the coinbase price to a big legacyDec")
-					// don't return to continue addressing the other assets
-					continue
+				continue
+			}
+
+			price = strings.TrimSpace(price)
+			if price == "" {
+				log.Error().
+					Str("module", "bootstrap").
+					Str("assetID", t.AssetID).
+					Str("name", t.Name).
+					Str("symbol", t.Symbol).
+					Msg("received empty price from coinbase; skipping price update")
+				if t.TotalUSDValue != "" {
+					totalTVL.AddMut(sdkmath.LegacyMustNewDecFromStr(t.TotalUSDValue))
 				}
-				divisor := sdkmath.NewIntWithDecimal(1, int(t.Decimals)) // #nosec G115
-				usdValue := priceDec.MulInt(stakingAmountInt).QuoInt(divisor)
-				totalTVL.AddMut(usdValue)
-				err = m.database.UpdateBootstrapTokenUSDValue(t.AssetID, usdValue.String())
-				if err != nil {
-					return err
+				continue
+			}
+
+			// Parse price string first to ensure it's a valid numeric value
+			priceDec, err := sdkmath.LegacyNewDecFromStr(price)
+			if err != nil {
+				log.Err(err).
+					Str("module", "bootstrap").
+					Str("assetID", t.AssetID).
+					Str("name", t.Name).
+					Str("symbol", t.Symbol).
+					Str("coinbasePrice", price).
+					Msg("failed to parse the coinbase price to a big legacyDec")
+				if t.TotalUSDValue != "" {
+					// Don't return; continue processing other assets
+					totalTVL.AddMut(sdkmath.LegacyMustNewDecFromStr(t.TotalUSDValue))
 				}
+				continue
+			}
+
+			// update the price using the normalized decimal string
+			if err := m.database.SaveBootstrapTokenPrice(t.AssetID, priceDec.String()); err != nil {
+				log.Err(err).
+					Str("module", "bootstrap").
+					Str("assetID", t.AssetID).
+					Str("name", t.Name).
+					Str("symbol", t.Symbol).
+					Msg("failed to save bootstrap token price")
+				continue
+			}
+
+			// calculate the total USD value of this asset
+			divisor := sdkmath.NewIntWithDecimal(1, int(t.Decimals)) // #nosec G115
+			usdValue := priceDec.MulInt(stakingAmountInt).QuoInt(divisor)
+			totalTVL.AddMut(usdValue)
+			if err := m.database.UpdateBootstrapTokenUSDValue(t.AssetID, usdValue.String()); err != nil {
+				log.Err(err).
+					Str("module", "bootstrap").
+					Str("assetID", t.AssetID).
+					Str("name", t.Name).
+					Str("symbol", t.Symbol).
+					Msg("failed to update bootstrap token USD value")
+				continue
 			}
 		} else {
 			// fetch the price from ChainLink

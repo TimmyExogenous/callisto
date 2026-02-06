@@ -84,12 +84,13 @@ CREATE TABLE bootstrap_token_prices
 
 CREATE TABLE IF NOT EXISTS bootstrap_staker_assets
 (
-    staker_id    TEXT    NOT NULL,
-    asset_id     TEXT    NOT NULL,
-    deposited    NUMERIC NOT NULL DEFAULT 0,
-    withdrawable NUMERIC NOT NULL DEFAULT 0,
-    delegated    NUMERIC NOT NULL DEFAULT 0,
-    updated_at   TIMESTAMP WITHOUT TIME ZONE,
+    staker_id       TEXT    NOT NULL,
+    asset_id        TEXT    NOT NULL,
+    deposited       NUMERIC NOT NULL DEFAULT 0,
+    withdrawable    NUMERIC NOT NULL DEFAULT 0,
+    delegated       NUMERIC NOT NULL DEFAULT 0,
+    updated_at      TIMESTAMP WITHOUT TIME ZONE,
+    updated_at_block BIGINT,  -- Block height when this record was last updated (for optimistic update invalidation)
     PRIMARY KEY (staker_id, asset_id),
     CONSTRAINT chk_total CHECK (deposited = withdrawable + delegated),
     CONSTRAINT fk_asset_id FOREIGN KEY (asset_id) REFERENCES bootstrap_tokens (asset_id)
@@ -97,6 +98,7 @@ CREATE TABLE IF NOT EXISTS bootstrap_staker_assets
 
 CREATE INDEX IF NOT EXISTS idx_bootstrap_deposits_staker_id ON bootstrap_staker_assets (staker_id);
 CREATE INDEX IF NOT EXISTS idx_bootstrap_deposits_asset_id ON bootstrap_staker_assets (asset_id);
+CREATE INDEX IF NOT EXISTS idx_bootstrap_staker_assets_block ON bootstrap_staker_assets (updated_at_block);
 
 -- The view is required because of Hasura.
 CREATE OR REPLACE VIEW active_staker_count_structure AS
@@ -117,11 +119,12 @@ $$;
 
 CREATE TABLE IF NOT EXISTS bootstrap_delegation_states
 (
-    staker_id     TEXT    NOT NULL,
-    asset_id      TEXT    NOT NULL,
-    operator_addr TEXT    NOT NULL,
-    delegated     NUMERIC NOT NULL DEFAULT 0,
-    updated_at    TIMESTAMP WITHOUT TIME ZONE,
+    staker_id        TEXT    NOT NULL,
+    asset_id         TEXT    NOT NULL,
+    operator_addr    TEXT    NOT NULL,
+    delegated        NUMERIC NOT NULL DEFAULT 0,
+    updated_at       TIMESTAMP WITHOUT TIME ZONE,
+    updated_at_block BIGINT,  -- Block height when this record was last updated (for optimistic update invalidation)
     PRIMARY KEY (staker_id, asset_id, operator_addr),
     CONSTRAINT fk_operator FOREIGN KEY (operator_addr) REFERENCES bootstrap_validator (validator_im_addr),
     CONSTRAINT fk_asset_id FOREIGN KEY (asset_id) REFERENCES bootstrap_tokens (asset_id),
@@ -130,6 +133,7 @@ CREATE TABLE IF NOT EXISTS bootstrap_delegation_states
 
 CREATE INDEX IF NOT EXISTS idx_bootstrap_delegations_staker_id ON bootstrap_delegation_states (staker_id);
 CREATE INDEX IF NOT EXISTS idx_bootstrap_delegations_asset_id ON bootstrap_delegation_states (asset_id);
+CREATE INDEX IF NOT EXISTS idx_bootstrap_delegations_block ON bootstrap_delegation_states (updated_at_block);
 
 CREATE TABLE IF NOT EXISTS bootstrap_operator_assets
 (

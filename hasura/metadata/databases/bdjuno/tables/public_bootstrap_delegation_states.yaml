@@ -9,6 +9,7 @@ select_permissions:
         - operator_addr
         - delegated
         - updated_at
+        - updated_at_block
       filter: {}
       limit: 1000
     role: anonymous

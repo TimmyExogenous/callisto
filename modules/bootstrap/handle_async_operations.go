@@ -20,8 +20,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func (m *Module) updateStatesAfterDepositAndClaiming(stakerAddr, assetAddr common.Address) error {
-	_, assetID, err := m.updateStakerAsset(stakerAddr, assetAddr)
+func (m *Module) updateStatesAfterDepositAndClaiming(stakerAddr, assetAddr common.Address, blockHeight int64) error {
+	_, assetID, err := m.updateStakerAsset(stakerAddr, assetAddr, blockHeight)
 	if err != nil {
 		return err
 	}
@@ -58,9 +58,9 @@ func (m *Module) updateStatesAfterDepositAndClaiming(stakerAddr, assetAddr commo
 	return m.database.UpdateBootstrapTokenAmountAndUSDValue(assetID, assetDepositAmount.String(), usdValue.String())
 }
 
-func (m *Module) updateStatesAfterDelegationChange(stakerAddr, assetAddr common.Address, validatorAddr string) error {
+func (m *Module) updateStatesAfterDelegationChange(stakerAddr, assetAddr common.Address, validatorAddr string, blockHeight int64) error {
 	// update the states of staker assets
-	stakerID, assetID, err := m.updateStakerAsset(stakerAddr, assetAddr)
+	stakerID, assetID, err := m.updateStakerAsset(stakerAddr, assetAddr, blockHeight)
 	if err != nil {
 		return err
 	}
@@ -72,11 +72,12 @@ func (m *Module) updateStatesAfterDelegationChange(stakerAddr, assetAddr common.
 
 	// update the delegation states
 	err = m.database.SaveBootstrapDelegationState(&types.BootstrapDelegationState{
-		StakerID:     stakerID,
-		AssetID:      assetID,
-		OperatorAddr: validatorAddr,
-		Delegated:    delegationAmount.String(),
-		UpdatedAt:    time.Now(),
+		StakerID:       stakerID,
+		AssetID:        assetID,
+		OperatorAddr:   validatorAddr,
+		Delegated:      delegationAmount.String(),
+		UpdatedAt:      time.Now(),
+		UpdatedAtBlock: blockHeight, // Block height for optimistic update invalidation
 	})
 	if err != nil {
 		return err
@@ -317,28 +318,28 @@ func (m *Module) SubscribeBootstrapEvents() (bool, error) {
 			}
 		case e := <-depositCh:
 			if e.Success {
-				err = m.updateStatesAfterDepositAndClaiming(e.Depositor, e.Token)
+				err = m.updateStatesAfterDepositAndClaiming(e.Depositor, e.Token, int64(e.Raw.BlockNumber))
 				if err != nil {
 					log.Err(err).Str("depositor", e.Depositor.String()).Str("token", e.Token.String()).Str("amount", e.Amount.String()).Msg("failed to handle the deposit event")
 				}
 			}
 		case e := <-claimCh:
 			if e.Success {
-				err = m.updateStatesAfterDepositAndClaiming(e.Withdrawer, e.Token)
+				err = m.updateStatesAfterDepositAndClaiming(e.Withdrawer, e.Token, int64(e.Raw.BlockNumber))
 				if err != nil {
 					log.Err(err).Str("withdrawer", e.Withdrawer.String()).Str("token", e.Token.String()).Str("amount", e.Amount.String()).Msg("failed to handle the claim event")
 				}
 			}
 		case e := <-delegationCh:
 			if e.Success {
-				err := m.updateStatesAfterDelegationChange(e.Delegator, e.Token, e.Delegatee)
+				err := m.updateStatesAfterDelegationChange(e.Delegator, e.Token, e.Delegatee, int64(e.Raw.BlockNumber))
 				if err != nil {
 					log.Err(err).Str("delegator", e.Delegator.String()).Str("token", e.Token.String()).Str("validator", e.Delegatee).Str("amount", e.Amount.String()).Msg("failed to handle the delegation event")
 				}
 			}
 		case e := <-undelegationCh:
 			if e.Success {
-				err := m.updateStatesAfterDelegationChange(e.Undelegator, e.Token, e.Undelegatee)
+				err := m.updateStatesAfterDelegationChange(e.Undelegator, e.Token, e.Undelegatee, int64(e.Raw.BlockNumber))
 				if err != nil {
 					log.Err(err).Str("undelegator", e.Undelegator.String()).Str("token", e.Token.String()).Str("validator", e.Undelegatee).Str("amount", e.Amount.String()).Msg("failed to handle the undelegation event")
 				}

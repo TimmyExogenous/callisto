@@ -361,13 +361,14 @@ WHERE asset_id = $4;`
 func (db *Db) SaveBootstrapStakerAsset(a *types.BootstrapStakerAsset) error {
 	stmt := `
 INSERT INTO bootstrap_staker_assets (
-    staker_id, asset_id, deposited, withdrawable, delegated, updated_at
-) VALUES ($1,$2,$3,$4,$5,$6)
+    staker_id, asset_id, deposited, withdrawable, delegated, updated_at, updated_at_block
+) VALUES ($1,$2,$3,$4,$5,$6,$7)
 ON CONFLICT (staker_id, asset_id) DO UPDATE
-SET deposited    = EXCLUDED.deposited,
-    withdrawable = EXCLUDED.withdrawable,
-    delegated    = EXCLUDED.delegated,
-    updated_at   = EXCLUDED.updated_at;`
+SET deposited        = EXCLUDED.deposited,
+    withdrawable     = EXCLUDED.withdrawable,
+    delegated        = EXCLUDED.delegated,
+    updated_at       = EXCLUDED.updated_at,
+    updated_at_block = EXCLUDED.updated_at_block;`
 
 	_, err := db.SQL.Exec(stmt,
 		a.StakerID,
@@ -376,6 +377,7 @@ SET deposited    = EXCLUDED.deposited,
 		a.Withdrawable,
 		a.Delegated,
 		a.UpdatedAt,
+		a.UpdatedAtBlock,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save bootstrap staker asset: %w", err)
@@ -403,13 +405,14 @@ func (db *Db) SaveBootstrapStakerAssetInTx(tx *sql.Tx, a *types.BootstrapStakerA
 	}
 	stmt := `
 INSERT INTO bootstrap_staker_assets (
-    staker_id, asset_id, deposited, withdrawable, delegated, updated_at
-) VALUES ($1,$2,$3,$4,$5,$6)
+    staker_id, asset_id, deposited, withdrawable, delegated, updated_at, updated_at_block
+) VALUES ($1,$2,$3,$4,$5,$6,$7)
 ON CONFLICT (staker_id, asset_id) DO UPDATE
-SET deposited    = bootstrap_staker_assets.deposited + EXCLUDED.deposited,
-    withdrawable = bootstrap_staker_assets.withdrawable + EXCLUDED.withdrawable,
-    delegated    = bootstrap_staker_assets.delegated + EXCLUDED.delegated,
-    updated_at   = EXCLUDED.updated_at;`
+SET deposited        = bootstrap_staker_assets.deposited + EXCLUDED.deposited,
+    withdrawable     = bootstrap_staker_assets.withdrawable + EXCLUDED.withdrawable,
+    delegated        = bootstrap_staker_assets.delegated + EXCLUDED.delegated,
+    updated_at       = EXCLUDED.updated_at,
+    updated_at_block = EXCLUDED.updated_at_block;`
 
 	_, err := tx.Exec(stmt,
 		a.StakerID,
@@ -418,6 +421,7 @@ SET deposited    = bootstrap_staker_assets.deposited + EXCLUDED.deposited,
 		a.Withdrawable,
 		a.Delegated,
 		a.UpdatedAt,
+		a.UpdatedAtBlock,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save bootstrap staker asset: %w", err)
@@ -451,13 +455,14 @@ SELECT EXISTS(
 	return exists, nil
 }
 
-func (db *Db) ClaimBootstrapStakerAsset(stakerID, assetID string, claimAmount int64, updatedAt time.Time) error {
+func (db *Db) ClaimBootstrapStakerAsset(stakerID, assetID string, claimAmount int64, updatedAt time.Time, blockHeight int64) error {
 	stmt := `
 UPDATE bootstrap_staker_assets
 SET
-    deposited    = deposited - $3,
-    withdrawable = withdrawable - $3,
-    updated_at   = $4
+    deposited        = deposited - $3,
+    withdrawable     = withdrawable - $3,
+    updated_at       = $4,
+    updated_at_block = $5
 WHERE staker_id = $1
   AND asset_id  = $2
   AND withdrawable >= $3
@@ -468,6 +473,7 @@ WHERE staker_id = $1
 		assetID,
 		claimAmount,
 		updatedAt,
+		blockHeight,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to claim bootstrap staker asset: %w", err)
@@ -487,11 +493,12 @@ WHERE staker_id = $1
 func (db *Db) SaveBootstrapDelegationState(d *types.BootstrapDelegationState) error {
 	stmt := `
 INSERT INTO bootstrap_delegation_states (
-    staker_id, asset_id, operator_addr, delegated, updated_at
-) VALUES ($1,$2,$3,$4,$5)
+    staker_id, asset_id, operator_addr, delegated, updated_at, updated_at_block
+) VALUES ($1,$2,$3,$4,$5,$6)
 ON CONFLICT (staker_id, asset_id, operator_addr) DO UPDATE
-SET delegated  = EXCLUDED.delegated,
-    updated_at = EXCLUDED.updated_at;`
+SET delegated        = EXCLUDED.delegated,
+    updated_at       = EXCLUDED.updated_at,
+    updated_at_block = EXCLUDED.updated_at_block;`
 
 	_, err := db.SQL.Exec(stmt,
 		d.StakerID,
@@ -499,6 +506,7 @@ SET delegated  = EXCLUDED.delegated,
 		d.OperatorAddr,
 		d.Delegated,
 		d.UpdatedAt,
+		d.UpdatedAtBlock,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save bootstrap delegation state: %w", err)
@@ -526,11 +534,12 @@ func (db *Db) SaveBootstrapDelegationStateInTx(tx *sql.Tx, d *types.BootstrapDel
 	}
 	stmt := `
 INSERT INTO bootstrap_delegation_states (
-    staker_id, asset_id, operator_addr, delegated, updated_at
-) VALUES ($1,$2,$3,$4,$5)
+    staker_id, asset_id, operator_addr, delegated, updated_at, updated_at_block
+) VALUES ($1,$2,$3,$4,$5,$6)
 ON CONFLICT (staker_id, asset_id, operator_addr) DO UPDATE
-SET delegated  = bootstrap_delegation_states.delegated + EXCLUDED.delegated,
-    updated_at = EXCLUDED.updated_at;`
+SET delegated        = bootstrap_delegation_states.delegated + EXCLUDED.delegated,
+    updated_at       = EXCLUDED.updated_at,
+    updated_at_block = EXCLUDED.updated_at_block;`
 
 	_, err := tx.Exec(stmt,
 		d.StakerID,
@@ -538,6 +547,7 @@ SET delegated  = bootstrap_delegation_states.delegated + EXCLUDED.delegated,
 		d.OperatorAddr,
 		d.Delegated,
 		d.UpdatedAt,
+		d.UpdatedAtBlock,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save bootstrap delegation state: %w", err)

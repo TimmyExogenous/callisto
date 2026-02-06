@@ -1,5 +1,5 @@
 # Stage 1: Builder
-FROM golang:1.21.12-bookworm AS builder
+FROM golang:1.24.12-bookworm AS builder
 
 LABEL stage=builder
 
@@ -30,4 +30,4 @@ COPY --from=builder /app/build/callisto /usr/local/bin/callisto
 RUN chmod +x /usr/local/bin/callisto
 USER appuser
 ENTRYPOINT ["/usr/local/bin/callisto"]
-CMD ["start", "--home", "/callisto/.callisto"]
+CMD ["parse", "bootstrap", "start", "--home", "/callisto/.callisto"]
