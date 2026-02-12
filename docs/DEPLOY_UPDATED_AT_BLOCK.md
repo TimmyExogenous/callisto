@@ -76,6 +76,25 @@ EOF
 > **Important:** Use the same `HASURA_ADMIN_SECRET` value when making API calls to Hasura.
 > Load the variables with `source .env` before running curl commands.
 
+### Parser database configuration
+
+The Callisto parser (**imuad_callisto_parser**) does **not** read the database URL from `.env` or from Docker Compose environment. It reads it from the config file at **`callisto-config/config.yaml`** (relative to the directory where you run `docker compose`).
+
+Before starting or redeploying, **verify that `database.url` in `callisto-config/config.yaml` is correct**:
+
+- **Host** must be the Postgres service name: `db` (so the parser connects to the database container on the Compose network). Do **not** use `127.0.0.1` or `localhost` inside the parser config, or the parser will try to connect to itself and fail.
+- **User** and **password** must match the `bdjuno` role and password created by the setup container (i.e. the same as `BDJUNO_USER` and `BDJUNO_PASSWORD` in your `.env`).
+- **Database name** is typically `bdjuno`.
+
+Example (align with your `.env`):
+
+```yaml
+database:
+  url: "postgresql://bdjuno:bdjuno_password@db:5432/bdjuno?sslmode=disable&search_path=public"
+```
+
+A wrong or outdated `database.url` (e.g. old password, or `127.0.0.1`/wrong port) will cause the parser to fail with `pq: password authentication failed for user "bdjuno"` or connection errors. See [PARSER_DATABASE_CONFIG.md](PARSER_DATABASE_CONFIG.md) for details.
+
 ---
 
 ## Local Testing
@@ -227,6 +246,7 @@ docker logs imuad_callisto_parser --tail 50 -f
 ### Pre-Deployment Checklist
 
 - [ ] Backup the database
+- [ ] **Verify `database.url` in `callisto-config/config.yaml`** — host must be `db`, user/password must match `BDJUNO_USER`/`BDJUNO_PASSWORD` in `.env` (see [Parser database configuration](#parser-database-configuration))
 - [ ] Verify the migration script works in staging
 - [ ] Schedule maintenance window (if needed)
 - [ ] Notify stakeholders
