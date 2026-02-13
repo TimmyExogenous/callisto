@@ -38,13 +38,17 @@ func (m *Module) RegisterPeriodicOperations(scheduler *gocron.Scheduler) error {
 	}
 
 	if _, err := scheduler.Every(m.Config.BTCUpdateInterval).Minutes().Do(func() {
-		m.refetchBTCStates()
+		if refetchErr := m.refetchBTCStates(); refetchErr != nil {
+			log.Error().Err(refetchErr).Str("module", "bootstrap").Msg("BTC states refetch failed")
+		}
 	}); err != nil {
 		return fmt.Errorf("failed to set up the periodic BTC states refetch operation: %s", err)
 	}
 
 	if _, err := scheduler.Every(m.Config.XRPUpdateInterval).Minutes().Do(func() {
-		m.refetchXRPStates()
+		if refetchErr := m.refetchXRPStates(); refetchErr != nil {
+			log.Error().Err(refetchErr).Str("module", "bootstrap").Msg("XRP states refetch failed")
+		}
 	}); err != nil {
 		return fmt.Errorf("failed to set up the periodic XRP states refetch operation: %s", err)
 	}
@@ -1910,11 +1914,13 @@ func (m *Module) getXRPVaultTransactionsFromLedger(fromLedger, toLedger int64) (
 			return nil, fmt.Errorf("failed to request account transactions: %w", err)
 		}
 
-		// Parse response
-		responseMap := map[string]interface{}(response)
-		result, ok := responseMap["result"].(map[string]interface{})
+		// Parse response (account_tx returns { "result": { "status": "success", "transactions": [...], ... } })
+		// XrpClient.Request returns BaseResponse (map[string]interface{}), use directly
+		result, ok := response["result"].(map[string]interface{})
 		if !ok {
-			return nil, fmt.Errorf("invalid response result format")
+			resultRaw := response["result"]
+			return nil, fmt.Errorf("invalid account_tx result format: result type %T (expected map); check xrp_rpc endpoint and API compatibility",
+				resultRaw)
 		}
 
 		// Check if the request was successful
