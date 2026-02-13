@@ -745,6 +745,9 @@ func (db *Db) GetScanState(chainType string) (*types.ScanState, error) {
 	)
 
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil // no row yet — expected on first run or after DB reset
+		}
 		return nil, fmt.Errorf("failed to get scan state for %s: %w", chainType, err)
 	}
 
